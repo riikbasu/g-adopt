@@ -89,6 +89,10 @@ def model(level, nn, do_write=False):
     # and the RHS == 0.
     stokes_solver.solve()
 
+    # calculating surface dynamic topography given the solution of the stokes problem
+    ns_solver = BoundaryNormalStressSolver(stokes_solver, top_id, solver_parameters=_project_solver_parameters)
+    ns = ns_solver.solve()
+
     # take out null modes through L2 projection from velocity and pressure
     # removing rotation from velocity:
     rot = as_vector((-X[1], X[0]))

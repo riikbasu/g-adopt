@@ -80,9 +80,10 @@ def model(level, k, nn, do_write=False):
     # and the RHS == 0.
     stokes_solver.solve()
 
-    # calculating surface dynamic topography given the solution of the stokes problem
+    # calculating surface normal stress given by the solution of the stokes problem
     ns_solver = BoundaryNormalStressSolver(stokes_solver, top_id, solver_parameters=_project_solver_parameters)
     ns_ = ns_solver.solve()
+    in_bc = InteriorBC(W, 0.0, top_id)  # interior BC for normal stress as we are only checking at the surface
 
     # take out null modes through L2 projection from velocity and pressure
     # removing rotation from velocity:
@@ -107,8 +108,11 @@ def model(level, k, nn, do_write=False):
     p_anal = Function(W, name="AnalyticalPressure")
     p_anal.dat.data[:] = [solution.pressure_cartesian(xyi) for xyi in pxy.dat.data]
     p_error = Function(W, name="PressureError").assign(p_-p_anal)
+
+    # compute ns analytical and error
     ns_anal = Function(W, name="AnalyticalSurfaceNormalStress")
     ns_anal.dat.data[:] = [-solution.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
+    in_bc.apply(ns_anal)
     ns_error = Function(W, name="NormalStressError").assign(ns_ - ns_anal)
 
     if do_write:
@@ -131,4 +135,4 @@ def model(level, k, nn, do_write=False):
     l2error_p = numpy.sqrt(assemble(dot(p_error, p_error)*dx))
     l2error_ns = numpy.sqrt(assemble(dot(ns_error, ns_error)*ds_t))
 
-    return l2error_u, l2error_p, l2anal_u, l2anal_p
+    return l2error_u, l2error_p, l2error_ns, l2anal_u, l2anal_p, l2anal_ns
