@@ -159,4 +159,4 @@ def model(level, nn, do_write=False):
     l2error_p = numpy.sqrt(assemble(dot(p_error, p_error)*dx))
     l2error_ns = numpy.sqrt(assemble(dot(ns_error, ns_error)*ds_t))
 
-    return l2error_u, l2error_p, l2anal_ns, l2anal_u, l2anal_p, l2error_ns
+    return l2error_u, l2error_p, l2error_ns, l2anal_u, l2anal_p, l2anal_ns
