@@ -32,10 +32,11 @@ solution = Function(V, name="phi")
 Q = FunctionSpace(mesh, "DG", 0)
 rho = Function(Q, name="rho").interpolate(conditional(r < r_surface, conditional(r > r_cmb, 1.0, 0.0), 0))
 
-bcs = [DirichletBC(V, 0.0, 1), DirichletBC(V, 0.0, 4)]
+bcs = [DirichletBC(V, 0.0, 4)]
 
 L = inner(grad(v), grad(phi)) * dx  # - v * dot(grad(phi), FacetNormal(mesh)) * ds(4)
 R = 4 * pi * rho * v * dx
+# solve(L == R, solution, bcs=bcs)
 solve(L == R, solution, bcs=bcs)
 
 fi = VTKFile("poisson.pvd")
