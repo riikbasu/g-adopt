@@ -103,6 +103,7 @@ jobs:
         env:
           GADOPT_LOGLEVEL: INFO
           TS_MAXFINISHED: 100
+          PYOP2_SPMD_STRICT: 1
 
       - name: Pytest
         id: run_pytest
