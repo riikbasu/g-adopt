@@ -479,6 +479,24 @@ class StokesSolver:
 
         self.solver.solve()
 
+    def force_on_boundary(self, subdomain_id: int | str) -> fd.Function:
+        """Computes the force acting on a boundary.
+
+        Arguments:
+          subdomain_id: The subdomain ID of a physical boundary.
+
+        Returns:
+          The force acting on the boundary.
+
+        """
+        if not hasattr(self, 'BoundaryNormalStressSolvers'):
+            self.BoundaryNormalStressSolvers = {}
+
+        if subdomain_id not in self.BoundaryNormalStressSolvers:
+            self.BoundaryNormalStressSolvers[subdomain_id] = BoundaryNormalStressSolver(self, subdomain_id, self.solver_parameters)
+
+        return self.BoundaryNormalStressSolvers[subdomain_id].solve()
+
 
 def ala_right_nullspace(
         W: fd.functionspaceimpl.WithGeometry,

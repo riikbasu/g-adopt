@@ -3,7 +3,7 @@ from gadopt import *
 # Set up geometry:
 nx, ny = 5, 5
 mesh = UnitSquareMesh(nx, ny, quadrilateral=True)  # Square mesh generated via firedrake
-mesh.cartesian = True # Ensure that the mesh is Cartesian
+mesh.cartesian = True  # Ensure that the mesh is Cartesian
 left_id, right_id, bottom_id, top_id = 1, 2, 3, 4  # Boundary IDs
 
 # Set up function spaces - currently using the bilinear Q2Q1 element pair:
@@ -51,9 +51,7 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 stokes_solver.solve()
 
 # Solver for computing the normal stress on the top boundary
-surface_force_solver = BoundaryNormalStressSolver(stokes_solver, top_id)
-
-force = surface_force_solver.solve()
+force = stokes_solver.force_on_boundary(top_id)
 
 # Create output file and select output_frequency:
 output_file = VTKFile("output.pvd")
