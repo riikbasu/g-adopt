@@ -1,5 +1,5 @@
-cases := smooth_cylindrical_freeslip
-long_cases :=
+cases := smooth_cylindrical_freeslip smooth_cylindrical_zeroslip delta_cylindrical_freeslip delta_cylindrical_zeroslip delta_cylindrical_freeslip_dpc delta_cylindrical_zeroslip_dpc
+long_cases := smooth_cylindrical_freesurface smooth_spherical_freeslip smooth_spherical_zeroslip
 
 sentinels := $(addprefix .sentinel.,$(cases))
 
@@ -13,7 +13,7 @@ $(cases): %: .sentinel.%
 
 $(sentinels): analytical.py
 	echo "running analytical $(subst .sentinel.,,$@)" >&2
-	python3 analytical.py submit -t "mpiexec -np {cores}" $(subst .sentinel.,,$@)
+	/usr/bin/time --format="analytical $(subst .sentinel.,,$@) finished in %E" python3 analytical.py submit -t "tsp -N {cores} -f mpiexec -np {cores}" $(subst .sentinel.,,$@)
 	echo "done" > $@
 
 .ONESHELL:
@@ -24,7 +24,7 @@ $(long_cases): analytical.py clean
 	read -u "$$out" sjob
 	echo "running spherical $@, waiting on $$sjob" >&2
 	mkdir -p pbs_output
-	python3 analytical.py submit -t "qsub -v GADOPT_CHECKOUT=$(gadopt_checkout),GADOPT_SETUP=$(gadopt_setup) -W depend=beforeany:$$sjob -N analytical_{params} -l storage=gdata/xd2+scratch/xd2+gdata/fp50,ncpus={cores},walltime=01:00:00,mem={mem}GB,wd,jobfs=10GB -q normal -P $(project) -o pbs_output/$(subst /,-,$@)_l{level}_{params}.out -e pbs_output/$(subst /,-,$@)_l{level}_{params}.err -- ./run_gadi.sh" $@
+	python3 analytical.py submit -t "qsub -v GADOPT_CHECKOUT=$(gadopt_checkout),GADOPT_SETUP=$(gadopt_setup) -W depend=beforeany:$$sjob -N analytical_{params} -l storage=gdata/xd2+scratch/xd2,ncpus={cores},walltime=01:00:00,mem={mem}GB,wd,jobfs=10GB -q normal -P $(project) -o pbs_output/$(subst /,-,$@)_l{level}_{params}.out -e pbs_output/$(subst /,-,$@)_l{level}_{params}.err -- ./run_gadi.sh" $@
 	wait
 
 clean:
