@@ -5,15 +5,15 @@ import pandas as pd
 from pathlib import Path
 
 enabled_cases = {
-    "smooth_cylindrical_freeslip": {"convergence": (4.0, 2.0), "rtol": 1e-1},
-    # "smooth_cylindrical_zeroslip": {"convergence": (4.0, 2.0, 2.0)},
-    # "smooth_cylindrical_freesurface": {"convergence": (4.0, 2.0, 2.0), "rtol": 1e-1},
-    # "delta_cylindrical_freeslip": {"convergence": (1.5, 0.5, 0.5)},
-    # "delta_cylindrical_zeroslip": {"convergence": (1.5, 0.5, 0.5)},
-    # "delta_cylindrical_freeslip_dpc": {"convergence": (3.5, 2.0, 0.5), "rtol": 1e-1},
-    # "delta_cylindrical_zeroslip_dpc": {"convergence": (3.5, 2.0, 0.5), "rtol": 2e-1},
-    # "smooth_spherical_freeslip": {"convergence": (4.0, 2.0, 0.5), "rtol": 1e-1},
-    # "smooth_spherical_zeroslip": {"convergence": (4.0, 2.0, 0.5), "rtol": 1e-1},
+    "smooth_cylindrical_freeslip": {"convergence": (4.0, 2.0, 2.0), "rtol": 1e-1},
+    "smooth_cylindrical_zeroslip": {"convergence": (4.0, 2.0, 2.0)},
+    "smooth_cylindrical_freesurface": {"convergence": (4.0, 2.0, 2.0), "rtol": 1e-1},
+    "delta_cylindrical_freeslip": {"convergence": (1.5, 0.5, 0.5)},
+    "delta_cylindrical_zeroslip": {"convergence": (1.5, 0.5, 0.5)},
+    "delta_cylindrical_freeslip_dpc": {"convergence": (3.5, 2.0, 0.5), "rtol": 1e-1},
+    "delta_cylindrical_zeroslip_dpc": {"convergence": (3.5, 2.0, 0.5), "rtol": 2e-1},
+    "smooth_spherical_freeslip": {"convergence": (4.0, 2.0, 0.5), "rtol": 1e-1},
+    "smooth_spherical_zeroslip": {"convergence": (4.0, 2.0, 0.5), "rtol": 1e-1},
 }
 
 longtest_cases = [
