@@ -90,9 +90,9 @@ def model(level, nn, do_write=False):
     stokes_solver.solve()
 
     # calculating surface normal stress given the solution of the stokes problem
-    ns_solver = BoundaryNormalStressSolver(stokes_solver, boundary.top_id, solver_parameters=_project_solver_parameters)
+    ns_solver = BoundaryNormalStressSolver(stokes_solver, boundary.topdelta_cylindrical_freeslip_dpc.py, solver_parameters=_project_solver_parameters)
     ns_ = ns_solver.solve()
-    in_bc = InteriorBC(W, 0.0, boundary.top_id)  # interior BC for normal stress as we are only checking at the surface
+    in_bc = InteriorBC(W, 0.0, boundary.top)  # interior BC for normal stress as we are only checking at the surface
 
     # take out null modes through L2 projection from velocity and pressure
     # removing rotation from velocity:
