@@ -89,9 +89,6 @@ def model(level, nn, do_write=False):
     # and the RHS == 0.
     stokes_solver.solve()
 
-    # calculating surface dynamic topography given the solution of the stokes problem
-    ns_ = stokes_solver.force_on_boundary(boundary.top)
-
     # take out null modes through L2 projection from velocity and pressure
     # removing rotation from velocity:
     rot = as_vector((-X[1], X[0]))
@@ -101,6 +98,9 @@ def model(level, nn, do_write=False):
     # removing constant nullspace from pressure
     coef = assemble(p_ * dx)/assemble(Constant(1.0)*dx(domain=mesh))
     p_.project(p_ - coef, solver_parameters=_project_solver_parameters)
+
+    # calculating surface dynamic topography given the solution of the stokes problem
+    ns_ = stokes_solver.force_on_boundary(boundary.top)
 
     solution_upper = assess.CylindricalStokesSolutionDeltaZeroSlip(float(nn), +1, nu=float(mu))
     solution_lower = assess.CylindricalStokesSolutionDeltaZeroSlip(float(nn), -1, nu=float(mu))
@@ -127,7 +127,7 @@ def model(level, nn, do_write=False):
     p_error = Function(Q1DG, name="PressureError").assign(pdg-p_anal)
 
     # compute ns_ analytical and error (note we are using the same space as pressure)
-    nsdg = interpolate(ns_, Q1DG)
+    nsdg = Function(Q1DG).interpolate(ns_)
     ns_anal_upper = Function(Q1DG, name="AnalyticalNormalStressUpper")
     ns_anal_lower = Function(Q1DG, name="AnalyticalNormalStressLower")
     ns_anal = Function(Q1DG, name="AnalyticalNormalStress")
