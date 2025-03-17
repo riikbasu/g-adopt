@@ -120,8 +120,9 @@ def submit_subcommand(args):
             command = args.template.format(
                 cores=cores, mem=4 * cores, params=paramstr, level=level
             )
-
-            procs[paramstr] = subprocess.Popen(
+            print(*command.split(), sys.executable, sys.argv[0], "run", args.case, str(level), *[str(v) for v in params])
+            continue
+            result = subprocess.run(
                 [
                     *command.split(),
                     sys.executable,
@@ -133,15 +134,15 @@ def submit_subcommand(args):
                 ]
             )
 
-    failed = False
+    # failed = False
 
-    for cmd, proc in procs.items():
-        if proc.wait() != 0:
-            print(f"{cmd} failed: {proc.returncode}")
-            failed = True
+    # for cmd, proc in procs.items():
+    #     if proc.wait() != 0:
+    #         print(f"{cmd} failed: {proc.returncode}")
+    #         failed = True
 
-    if failed:
-        sys.exit(1)
+    # if failed:
+    #     sys.exit(1)
 
 
 def count_subcommand(args):
