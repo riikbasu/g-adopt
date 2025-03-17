@@ -134,7 +134,7 @@ def model(level, nn, do_write=False):
     ns_anal_upper.dat.data[:] = [-solution_upper.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
     ns_anal_lower.dat.data[:] = [-solution_lower.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
     ns_anal.interpolate(marker * ns_anal_lower + (1 - marker) * ns_anal_upper)
-    InteriorBC(W, 0.0, boundary.top).apply(ns_anal)
+    InteriorBC(Q1DG, 0.0, boundary.top).apply(ns_anal)
     ns_error = Function(Q1DG, name="NormalStressError").assign(nsdg - p_anal)
 
     if do_write:

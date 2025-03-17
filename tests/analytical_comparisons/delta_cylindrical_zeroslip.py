@@ -90,9 +90,7 @@ def model(level, nn, do_write=False):
     stokes_solver.solve()
 
     # calculating surface dynamic topography given the solution of the stokes problem
-    ns_solver = BoundaryNormalStressSolver(stokes_solver, boundary.top, solver_parameters=_project_solver_parameters)
-    ns_ = ns_solver.solve()
-    in_bc = InteriorBC(W, 0.0, boundary.top)  # interior BC for normal stress as we are only checking at the surface
+    ns_ = stokes_solver.force_on_boundary(boundary.top)
 
     # take out null modes through L2 projection from velocity and pressure
     # removing rotation from velocity:
@@ -136,7 +134,7 @@ def model(level, nn, do_write=False):
     ns_anal_upper.dat.data[:] = [-solution_upper.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
     ns_anal_lower.dat.data[:] = [-solution_lower.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
     ns_anal.interpolate(marker * ns_anal_lower + (1 - marker) * ns_anal_upper)
-    in_bc.apply(ns_anal)
+    InteriorBC(Q1DG, 0.0, boundary.top).apply(ns_anal)
     ns_error = Function(Q1DG, name="NormalStressError").assign(nsdg - p_anal)
 
     if do_write:
