@@ -117,9 +117,10 @@ def model(level, l, mm, k, do_write=False):
     p_anal.dat.data[:] = [solution.pressure_cartesian(xyzi) for xyzi in pxyz.dat.data]
     p_error = Function(W, name="PressureError").assign(p_-p_anal)
 
-    # compute p analytical and error
+    # compute ns analytical and error
     ns_anal = Function(W, name="AnalyticalSurfaceNormalStress")
     ns_anal.dat.data[:] = [-solution.radial_stress_cartesian(xyzi) for xyzi in pxyz.dat.data]
+    InteriorBC(W, 0.0, boundary.top).apply(ns_anal)
     ns_error = Function(W, name="SurfaceNormalStressError").assign(ns_-ns_anal)
 
     if do_write:
@@ -138,9 +139,9 @@ def model(level, l, mm, k, do_write=False):
 
     l2anal_u = numpy.sqrt(assemble(dot(u_anal, u_anal)*dx))
     l2anal_p = numpy.sqrt(assemble(dot(p_anal, p_anal)*dx))
-    l2anal_ns = numpy.sqrt(assemble(dot(ns_anal, ns_anal)*ds_t))
+    l2anal_ns = numpy.sqrt(assemble(dot(ns_anal, ns_anal)*dx))
     l2error_u = numpy.sqrt(assemble(dot(u_error, u_error)*dx))
     l2error_p = numpy.sqrt(assemble(dot(p_error, p_error)*dx))
-    l2error_ns = numpy.sqrt(assemble(dot(ns_error, ns_error)*ds_t))
+    l2error_ns = numpy.sqrt(assemble(dot(ns_error, ns_error)*dx))
 
     return l2error_u, l2error_p, l2error_ns, l2anal_u, l2anal_p, l2anal_ns

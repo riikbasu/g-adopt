@@ -90,9 +90,7 @@ def model(level, nn, do_write=False):
     stokes_solver.solve()
 
     # calculating surface normal stress given the solution of the stokes problem
-    ns_solver = BoundaryNormalStressSolver(stokes_solver, boundary.top, delta_cylindrical_freeslip_dpc.py, solver_parameters=_project_solver_parameters)
-    ns_ = ns_solver.solve()
-    in_bc = InteriorBC(W, 0.0, boundary.top)  # interior BC for normal stress as we are only checking at the surface
+    ns_ = stokes_solver.force_on_boundary(boundary.top)
 
     # take out null modes through L2 projection from velocity and pressure
     # removing rotation from velocity:
@@ -136,7 +134,7 @@ def model(level, nn, do_write=False):
     ns_anal_upper.dat.data[:] = [-solution_upper.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
     ns_anal_lower.dat.data[:] = [-solution_lower.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
     ns_anal.interpolate(marker * ns_anal_lower + (1 - marker) * ns_anal_upper)
-    in_bc.apply(ns_anal)
+    InteriorBC(W, 0.0, boundary.top).apply(ns_anal)
     ns_error = Function(Q1DG, name="NormalStressError").assign(nsdg - p_anal)
 
     if do_write:
@@ -154,9 +152,9 @@ def model(level, nn, do_write=False):
 
     l2anal_u = numpy.sqrt(assemble(dot(u_anal, u_anal)*dx))
     l2anal_p = numpy.sqrt(assemble(dot(p_anal, p_anal)*dx))
-    l2anal_ns = numpy.sqrt(assemble(dot(ns_anal, ns_anal)*ds_t))
+    l2anal_ns = numpy.sqrt(assemble(dot(ns_anal, ns_anal)*dx))
     l2error_u = numpy.sqrt(assemble(dot(u_error, u_error)*dx))
     l2error_p = numpy.sqrt(assemble(dot(p_error, p_error)*dx))
-    l2error_ns = numpy.sqrt(assemble(dot(ns_error, ns_error)*ds_t))
+    l2error_ns = numpy.sqrt(assemble(dot(ns_error, ns_error)*dx))
 
     return l2error_u, l2error_p, l2error_ns, l2anal_u, l2anal_p, l2anal_ns
