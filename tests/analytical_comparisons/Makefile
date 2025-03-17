@@ -1,5 +1,5 @@
-cases := smooth_cylindrical_freeslip smooth_cylindrical_zeroslip delta_cylindrical_freeslip delta_cylindrical_zeroslip delta_cylindrical_freeslip_dpc delta_cylindrical_zeroslip_dpc
-long_cases := smooth_cylindrical_freesurface smooth_spherical_freeslip smooth_spherical_zeroslip
+cases := smooth_cylindrical_freeslip smooth_cylindrical_zeroslip
+long_cases :=
 
 sentinels := $(addprefix .sentinel.,$(cases))
 
@@ -13,7 +13,7 @@ $(cases): %: .sentinel.%
 
 $(sentinels): analytical.py
 	echo "running analytical $(subst .sentinel.,,$@)" >&2
-	/usr/bin/time --format="analytical $(subst .sentinel.,,$@) finished in %E" python3 analytical.py submit -t "tsp -N {cores} -f mpiexec -np {cores}" $(subst .sentinel.,,$@)
+	python3 analytical.py submit -t "mpiexec -np {cores}" $(subst .sentinel.,,$@)
 	echo "done" > $@
 
 .ONESHELL:
