@@ -127,15 +127,14 @@ def model(level, nn, do_write=False):
     p_error = Function(Q1DG, name="PressureError").assign(pdg-p_anal)
 
     # compute ns_ analytical and error (note we are using the same space as pressure)
-    nsdg = interpolate(ns_, Q1DG)
     ns_anal_upper = Function(Q1DG, name="AnalyticalNormalStressUpper")
     ns_anal_lower = Function(Q1DG, name="AnalyticalNormalStressLower")
-    ns_anal = Function(Q1DG, name="AnalyticalNormalStress")
     ns_anal_upper.dat.data[:] = [-solution_upper.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
     ns_anal_lower.dat.data[:] = [-solution_lower.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
+    ns_anal = Function(W, name="AnalyticalNormalStress")
     ns_anal.interpolate(marker * ns_anal_lower + (1 - marker) * ns_anal_upper)
-    InteriorBC(Q1DG, 0.0, boundary.top).apply(ns_anal)
-    ns_error = Function(Q1DG, name="NormalStressError").assign(nsdg - p_anal)
+    InteriorBC(W, 0.0, boundary.top).apply(ns_anal)
+    ns_error = Function(Q1DG, name="NormalStressError").assign(ns_ - ns_anal)
 
     if do_write:
         # Write output files in VTK format:
