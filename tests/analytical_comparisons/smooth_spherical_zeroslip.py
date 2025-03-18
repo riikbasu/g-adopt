@@ -120,7 +120,7 @@ def model(level, l, mm, k, do_write=False):
     # compute p analytical and error
     ns_anal = Function(W, name="AnalyticalSurfaceNormalStress")
     ns_anal.dat.data[:] = [-solution.radial_stress_cartesian(xyzi) for xyzi in pxyz.dat.data]
-    ns_error = Function(W, name="SurfaceNormalStressError").assign(ns_-ns_anal)
+    ns_error = Function(W, name="SurfaceNormalStressError").assign(ns_ - ns_anal)
 
     if do_write:
         # Write output files in VTK format:

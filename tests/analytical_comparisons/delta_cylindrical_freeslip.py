@@ -134,7 +134,7 @@ def model(level, nn, do_write=False):
     ns_anal = Function(W, name="AnalyticalNormalStress")
     ns_anal.interpolate(marker * ns_anal_lower + (1 - marker) * ns_anal_upper)
     InteriorBC(W, 0.0, boundary.top).apply(ns_anal)
-    ns_error = Function(Q1DG, name="NormalStressError").assign(ns_ - ns_anal)
+    ns_error = Function(W, name="NormalStressError").assign(ns_ - ns_anal)
 
     if do_write:
         # Write output files in VTK format:
