@@ -12,7 +12,7 @@ _project_solver_parameters = {
 }
 
 
-def model(level, nn, do_write=True):
+def model(level, nn, do_write=False):
     """The delta-function initial condition, cylindrical domain, zero-slip boundary condition model.
 
     Args:
