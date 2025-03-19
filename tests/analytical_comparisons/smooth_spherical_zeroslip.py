@@ -103,7 +103,7 @@ def model(level, l, mm, k, do_write=False):
     p_.project(p_ - coef, solver_parameters=_project_solver_parameters)
 
     # calculating surface normal stress given the solution of the stokes problem
-    ns_ = stokes_solver.force_on_boundary(boundary.top)
+    ns_ = NormalStressProjector(stokes_solver, X / r).project()
 
     # compute u analytical and error
     uxzy = Function(V).interpolate(as_vector((X[0], X[1], X[2])))

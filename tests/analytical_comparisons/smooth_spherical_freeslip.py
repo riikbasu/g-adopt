@@ -40,6 +40,7 @@ def model(level, l, mm, k, do_write=False):
 
     # Define geometric quantities
     X = SpatialCoordinate(mesh)
+    r = sqrt(X[0]**2 + X[1]**2 + X[2]**2)
 
     # Set up function spaces - currently using the P2P1 element pair :
     V = VectorFunctionSpace(mesh, "CG", 2)  # velocity function space (vector)
@@ -103,7 +104,7 @@ def model(level, l, mm, k, do_write=False):
     p_.project(p_ - coef, solver_parameters=_project_solver_parameters)
 
     # calculating surface normal stress given the solution of the stokes problem
-    ns_ = stokes_solver.force_on_boundary(boundary.top)
+    ns_ = NormalStressProjector(stokes_solver, X / r).project()
 
     # compute u analytical and error
     uxzy = Function(V).interpolate(as_vector((X[0], X[1], X[2])))
@@ -120,8 +121,7 @@ def model(level, l, mm, k, do_write=False):
     # compute ns analytical and error
     ns_anal = Function(W, name="AnalyticalSurfaceNormalStress")
     ns_anal.dat.data[:] = [-solution.radial_stress_cartesian(xyzi) for xyzi in pxyz.dat.data]
-    InteriorBC(W, 0.0, boundary.top).apply(ns_anal)
-    ns_error = Function(W, name="SurfaceNormalStressError").assign(ns_-ns_anal)
+    ns_error = Function(W, name="SurfaceNormalStressError").assign(ns_ - ns_anal)
 
     if do_write:
         # Write output files in VTK format:

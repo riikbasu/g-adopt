@@ -91,7 +91,7 @@ def model(level, k, nn, do_write=False):
     p_.project(p_ - coef, solver_parameters=_project_solver_parameters)
 
     # calculating surface normal stress given by the solution of the stokes problem
-    ns_ = stokes_solver.force_on_boundary(boundary.top)
+    ns_ = NormalStressProjector(stokes_solver, X / r).project()
 
     solution = assess.CylindricalStokesSolutionSmoothFreeSlip(int(float(nn)), int(float(k)), nu=float(mu))
 
@@ -110,7 +110,6 @@ def model(level, k, nn, do_write=False):
     # compute ns analytical and error
     ns_anal = Function(W, name="AnalyticalSurfaceNormalStress")
     ns_anal.dat.data[:] = [-solution.radial_stress_cartesian(xyi) for xyi in pxy.dat.data]
-    InteriorBC(W, 0.0, boundary.top).apply(ns_anal)
     ns_error = Function(W, name="NormalStressError").assign(ns_ - ns_anal)
 
     if do_write:
