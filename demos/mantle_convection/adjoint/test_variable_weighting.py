@@ -27,7 +27,7 @@ T.assign(T + 0.1)
 weight = Function(R, name="weight").assign(1.0)
 
 
-class DiagnosticBlock(Block):
+class VariableBlock(Block):
     """
     A block that computes the functional value of the difference between the
     """
@@ -53,7 +53,7 @@ class DiagnosticBlock(Block):
         return
 
 
-diagnostic_block = DiagnosticBlock(weight)
+diagnostic_block = VariableBlock(weight)
 tape.add_block(diagnostic_block)
 diagnostic_block.recompute()
 
