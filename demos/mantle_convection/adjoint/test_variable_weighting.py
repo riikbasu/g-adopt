@@ -50,7 +50,7 @@ class VariableBlock(Block):
         return restored_function
 
     def evaluate_adj_component(self, inputs, adj_inputs, block_variable, idx, prepared=None):
-        return
+        return block_variable
 
 
 diagnostic_block = VariableBlock(weight)
