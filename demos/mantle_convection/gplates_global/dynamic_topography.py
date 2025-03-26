@@ -1,12 +1,13 @@
 # Computing dynamic topography from a pygplates simulation
-#
-#
 from gadopt import *
-
+from pathlib import Path
 
 def __main__():
+    # Getting all the filenames
+    all_filenames = get_all_files()
+
     # Construct a CubedSphere mesh and then extrude into a sphere (or load from checkpoint):
-    with CheckpointFile("initial_condition_mat_prop/Final_State.h5", mode="r") as f:
+    with CheckpointFile(str(all_filenames[0]), mode="r") as f:
         mesh = f.load_mesh("firedrake_default_extruded")
     mesh.cartesian = False
 
@@ -95,8 +96,11 @@ def __main__():
 
     vtk_output = VTKFile("cao_etal.pvd")
 
-    for finame in range(100):
+    for fname in all_filenames:
         # TODO: Load temperature field
+        with CheckpointFile(str(fname), mode="r") as f:
+            T.interpolate(f.load_function(mesh, name="Temperature"))
+            z.interpolate(f.load_function(mesh, name="Stokes"))
 
         # Solve Stokes sytem:
         stokes_solver.solve()
@@ -146,3 +150,9 @@ def get_TALA_fields(Q):
         "cpbar": cpbar,
         "gbar": gbar,
     }
+
+
+def get_all_files():
+    main_path = Path("/g/data/xd2/rad552/FIREDRAKE_Simulations/DG_GPlates_Late_2024/GPlates_2e8/Cao/")
+    all_files = sorted(main_path.glob("*/Final_State.h5"), key=lambda x: int(x.parent.name.replace("C", "")))
+    return all_files 
