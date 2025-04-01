@@ -57,13 +57,11 @@ T = Function(Q, name="Temperature")
 # thermal boundary layers, and a Gaussian anomaly close to the mantle. This initial state is chosen, such that after 80
 # time steps we would have a temperature field representing a plume-like structure in the domain.
 
-# +
 X = SpatialCoordinate(mesh)
 T.interpolate(
     0.5 * (erf((1 - X[1]) * 3.0) + erf(-X[1] * 3.0) + 1) +
     0.1 * exp(-0.5 * ((X - as_vector((0.5, 0.2))) / Constant(0.1)) ** 2)
 )
-# -
 
 # Configuring Layer Average Calculation
 # -------------------------------------

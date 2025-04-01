@@ -16,6 +16,8 @@
 # checkpoint file on our servers.  These fields serve as benchmarks for evaluating our inverse problem's performance. To
 # download the reference benchmark checkpoint file if it doesn't already exist, execute the following command:
 
+
+
 # + tags=["active-ipynb"]
 # ![ ! -f adjoint-demo-checkpoint-state.h5 ] && wget https://data.gadopt.org/demos/adjoint-demo-checkpoint-state.h5
 # -
@@ -27,7 +29,6 @@
 # +
 from gadopt import *
 from gadopt.inverse import *
-
 # Open the checkpoint file and subsequently load the mesh:
 checkpoint_filename = "adjoint-demo-checkpoint-state.h5"
 checkpoint_file = CheckpointFile(checkpoint_filename, mode="r")
@@ -68,15 +69,15 @@ checkpoint_file.close()
 # + tags=["active-ipynb"]
 # import pyvista as pv
 # VTKFile("./visualisation_vtk.pvd").write(Tobs, Tic_ref)
-# dataset = pv.read('./visualisation_vtk.pvd')
-# # Create a plotter object
-# plotter = pv.Plotter()
-# # Add the dataset to the plotter
-# plotter.add_mesh(dataset, scalars='Observed Temperature', cmap='coolwarm')
-# # Adjust the camera position
-# plotter.camera_position = [(0.5, 0.5, 2.5), (0.5, 0.5, 0), (0, 1, 0)]
-# # Show the plot
-# plotter.show(jupyter_backend="static")
+# # dataset = pv.read('./visualisation_vtk.pvd')
+# # # Create a plotter object
+# # plotter = pv.Plotter()
+# # # Add the dataset to the plotter
+# # plotter.add_mesh(dataset, scalars='Observed Temperature', cmap='coolwarm')
+# # # Adjust the camera position
+# # plotter.camera_position = [(0.5, 0.5, 2.5), (0.5, 0.5, 0), (0, 1, 0)]
+# # # Show the plot
+# # plotter.show(jupyter_backend="static")
 # -
 
 # The Inverse Code
@@ -159,7 +160,8 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-initial_timestep = timesteps - 10
+# initial_timestep = timesteps - 10
+initial_timestep = timesteps - 5
 
 # Define the Control Space
 # ------------------------
@@ -292,10 +294,11 @@ reduced_functional = ReducedFunctional(objective, control)
 
 pause_annotation()
 
+
 # We can print the contents of the tape at this stage to verify that it is not empty.
 
 # + tags=["active-ipynb"]
-# print(tape.get_blocks())
+# # print(tape.get_blocks())
 # -
 
 # Verification of Gradients: Taylor Remainder Convergence Test
@@ -323,13 +326,13 @@ pause_annotation()
 # Here is how you can perform a Taylor test in the code:
 
 # + tags=["active-ipynb"]
-# # Define the perturbation in the initial temperature field
-# import numpy as np
-# Delta_temp = Function(Tic.function_space(), name="Delta_Temperature")
-# Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
+# # # Define the perturbation in the initial temperature field
+# # import numpy as np
+# # Delta_temp = Function(Tic.function_space(), name="Delta_Temperature")
+# # Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
 #
-# # Perform the Taylor test to verify the gradients
-# minconv = taylor_test(reduced_functional, Tic, Delta_temp)
+# # # Perform the Taylor test to verify the gradients
+# # minconv = taylor_test(reduced_functional, Tic, Delta_temp)
 # -
 
 # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
@@ -344,6 +347,11 @@ pause_annotation()
 # optimisation problem should not search for solutions beyond these values.
 
 # +
+def callback(intermediate_result):
+    sf = inspect.stack()[3].frame.f_locals["sf"]
+    print(f"{intermediate_result.fun=}")
+    print(f"{sf.nfev=}, {sf.ngev=}")
+
 # Define lower and upper bounds for the temperature
 T_lb = Function(Tic.function_space(), name="Lower Bound Temperature")
 T_ub = Function(Tic.function_space(), name="Upper Bound Temperature")
@@ -354,7 +362,27 @@ T_ub.assign(1.0)
 
 # Define the minimisation problem, with the goal to minimise the reduced functional
 # Note: in some scenarios, the goal might be to maximise (rather than minimise) the functional.
-minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
+options = { 'maxcor': 10, # The maximum number of variable metric corrections (memory)
+            'ftol': 1e7* np.finfo(float).eps,# 1e14 for low accuracy, 1e7 for mid-accuracy, 10 for high accuracy
+            'gtol': 0,#1e-5, # Iteration stops if projection of gradient is smaller than this
+            'eps': 1e-8, # Only used when approx grad is True
+            'maxfun': 15000, # Maximum number of evaluations
+            'maxiter': 5, # Maximum number of iterations
+            'maxls': 20, # Maximum number of line-searth steps
+        }
+
+with stop_annotating():
+    # Setting up the problem using minimize that uses Scipy
+    # cb = CallbackFunctor(reduced_functional, "dummy.txt")
+    sol = minimize(reduced_functional, bounds=(T_lb, T_ub), method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
+
+    # Save the optimal temperature_ic field
+    ckpt_T_ic = DumbCheckpoint("T_ic_optimal",\
+            single_file=True, mode=FILE_CREATE,\
+                               comm=mesh.comm)
+    ckpt_T_ic.store(sol)
+    ckpt_T_ic.close()
+
 # -
 
 # Using the Lin-Moré optimiser
@@ -374,8 +402,27 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # Here, we set the number of iterations to only 5, as opposed to the default 100. We also adjust the step-length for this problem,
 # by setting it to a lower value than our default.
 
+# +
+# Define lower and upper bounds for the temperature
+T_lb = Function(Tic.function_space(), name="Lower Bound Temperature")
+T_ub = Function(Tic.function_space(), name="Upper Bound Temperature")
+
+# Assign the bounds
+T_lb.assign(0.0)
+T_ub.assign(1.0)
+
+# Define the minimisation problem, with the goal to minimise the reduced functional
+# Note: in some scenarios, the goal might be to maximise (rather than minimise) the functional.
+minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
+# -
+
 minimisation_parameters["Status Test"]["Iteration Limit"] = 5
-minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 1e-2
+minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
+minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
+minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
+minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
+minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
+minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
 
 # A notable feature of this optimisation approach in ROL is its checkpointing capability. For every iteration,
 # all information necessary to restart the optimisation from that iteration is saved in the specified `checkpoint_dir`.
@@ -398,6 +445,7 @@ optimiser = LinMoreOptimiser(
 # functional directly in order to produce a plot of the convergence.
 
 # +
+   
 solutions_vtk = VTKFile("solutions.pvd")
 solution_container = Function(Tic.function_space(), name="Solutions")
 functional_values = []
@@ -426,7 +474,7 @@ reduced_functional.eval_cb_post = record_value
 optimiser.run()
 
 # Write the functional values to a file
-with open("functional.txt", "w") as f:
+with open("functional_scipy.txt", "w") as f:
     f.write("\n".join(str(x) for x in functional_values))
 # -
 
@@ -439,16 +487,16 @@ with open("functional.txt", "w") as f:
 # + tags=["active-ipynb"]
 # import pyvista as pv
 # VTKFile("./solution.pvd").write(optimiser.rol_solver.rolvector.dat[0])
-# dataset = pv.read('./solution.pvd')
-# # Create a plotter object
-# plotter = pv.Plotter()
-# # Add the dataset to the plotter
-# plotter.add_mesh(dataset, scalars=dataset[0].array_names[0], cmap='coolwarm')
-# plotter.add_text("Solution after 5 iterations", font_size=10)
-# # Adjust the camera position
-# plotter.camera_position = [(0.5, 0.5, 2.5), (0.5, 0.5, 0), (0, 1, 0)]
-# # Show the plot
-# plotter.show(jupyter_backend="static")
+# # dataset = pv.read('./solution.pvd')
+# # # Create a plotter object
+# # plotter = pv.Plotter()
+# # # Add the dataset to the plotter
+# # plotter.add_mesh(dataset, scalars=dataset[0].array_names[0], cmap='coolwarm')
+# # plotter.add_text("Solution after 5 iterations", font_size=10)
+# # # Adjust the camera position
+# # plotter.camera_position = [(0.5, 0.5, 2.5), (0.5, 0.5, 0), (0, 1, 0)]
+# # # Show the plot
+# # plotter.show(jupyter_backend="static")
 
 # + tags=["active-ipynb"]
 # import matplotlib.pyplot as plt
@@ -456,3 +504,5 @@ with open("functional.txt", "w") as f:
 # plt.xlabel("Optimisation iteration")
 # plt.ylabel("Reduced functional")
 # plt.title("Optimisation convergence")
+# -
+
