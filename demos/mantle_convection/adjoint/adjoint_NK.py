@@ -16,6 +16,8 @@
 # checkpoint file on our servers.  These fields serve as benchmarks for evaluating our inverse problem's performance. To
 # download the reference benchmark checkpoint file if it doesn't already exist, execute the following command:
 
+
+
 # + tags=["active-ipynb"]
 # ![ ! -f adjoint-demo-checkpoint-state.h5 ] && wget https://data.gadopt.org/demos/adjoint-demo-checkpoint-state.h5
 # -
@@ -159,7 +161,7 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # `timesteps - 10`.
 
 # initial_timestep = timesteps - 10
-initial_timestep = timesteps - 50
+initial_timestep = timesteps - 5
 
 # Define the Control Space
 # ------------------------
@@ -389,109 +391,43 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
-# Using the Lin-Moré optimiser
-# ----------------------------
-#
-# In this tutorial, we employ the trust region method of Lin and Moré (1999) implemented in ROL (Rapid Optimization Library).
-# Lin-Moré is a truncated Newton method, which involves the repeated application of an iterative algorithm to approximately
-# solve Newton’s equations (Dembo and Steihaug, 1983).
-#
-# Lin-Moré effectively handles provided bound constraints by ensuring that variables remain within their specified bounds.
-# During each iteration, variables are classified into "active" and "inactive" sets. Variables at their bounds that do not
-# allow descent are considered active and are fixed during the iteration. The remaining variables, which can change without
-# violating the bounds, are inactive. These properties make the algorithm robust and efficient for solving bound-constrained
-# optimisation problems.
-#
-# For our solution of the optimisation problem we use the pre-defined paramters set in gadopt by using `minimsation_parameters`.
-# Here, we set the number of iterations to only 5, as opposed to the default 100. We also adjust the step-length for this problem,
-# by setting it to a lower value than our default.
-
-minimisation_parameters["Status Test"]["Iteration Limit"] = 10
-minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
-minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
-minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
-minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
-minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
-minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
-
-# A notable feature of this optimisation approach in ROL is its checkpointing capability. For every iteration,
-# all information necessary to restart the optimisation from that iteration is saved in the specified `checkpoint_dir`.
-
-# Define the LinMore Optimiser class with checkpointing capability:
-optimiser = LinMoreOptimiser(
-    minimisation_problem,
-    minimisation_parameters,
-    checkpoint_dir="optimisation_checkpoint",
-)
-
-# For sake of book-keeping the simulation, we have also implemented a user-defined way of
-# recording information that might be used to check the optimisation performance. This
-# callback function will be executed at the end of each iteration. Here, we write out
-# the control field, i.e., the reconstructed intial temperature field, at the end of
-# each iteration. To access the last value of *an overloaded object* we should access the
-# `.block_variable.checkpoint` method as below.
-#
-# For the sake of this demo, we also record the values of the reduced
-# functional directly in order to produce a plot of the convergence.
+# ## Using Netwon_krylov
 
 # +
-solutions_vtk = VTKFile("solutions.pvd")
+minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
+minimisation_parameters["Status Test"]["Iteration Limit"] = 10
+minimisation_parameters["Step"]["Line Search"] = {
+  "Descent Method": {"Type": "Newton-Krylov"}
+}
+rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_product="L2")
+rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
+rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
+
+solutions_vtk = VTKFile("solutions_NK.pvd")
 solution_container = Function(Tic.function_space(), name="Solutions")
 functional_values = []
 
-
-def callback():
-    solution_container.assign(Tic.block_variable.checkpoint)
-    solutions_vtk.write(solution_container)
-    final_temperature_misfit = assemble(
-        (T.block_variable.checkpoint - Tobs) ** 2 * dx
-    )
-    log(f"Terminal Temperature Misfit: {final_temperature_misfit}")
-
+class StatusTest(ROL.StatusTest):
+    def check(self, status):
+        # callback stuff goes here
+        solution_container.assign(Tic.block_variable.checkpoint)
+        solutions_vtk.write(solution_container)
+        final_temperature_misfit = assemble(
+            (T.block_variable.checkpoint - Tobs) ** 2 * dx
+        )
+        log(f"Terminal Temperature Misfit: {final_temperature_misfit}")
+        return super().check(status)
 
 def record_value(value, *args):
     functional_values.append(value)
 
-
-optimiser.add_callback(callback)
 reduced_functional.eval_cb_post = record_value
-
-# If it existed, we could restore the optimisation from last checkpoint:
-# optimiser.restore()
-
-# Run the optimisation
-optimiser.run()
+rol_algorithm.setStatusTest(StatusTest(rol_params), False)
+rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective)
 
 # Write the functional values to a file
-with open("functional.txt", "w") as f:
+with open("functional_NK.txt", "w") as f:
     f.write("\n".join(str(x) for x in functional_values))
 # -
 
-# At this point a total number of 5 iterations are performed. For the example
-# case here with 10 timesteps this should result an adequete reduction
-# in the objective functional. Now we can look at the solution
-# visually. For the actual simulation with 80 time-steps, this solution
-# could be compared to `Tic_ref` as the "true solution".
-
-# + tags=["active-ipynb"]
-# # import pyvista as pv
-# # VTKFile("./solution.pvd").write(optimiser.rol_solver.rolvector.dat[0])
-# # dataset = pv.read('./solution.pvd')
-# # # Create a plotter object
-# # plotter = pv.Plotter()
-# # # Add the dataset to the plotter
-# # plotter.add_mesh(dataset, scalars=dataset[0].array_names[0], cmap='coolwarm')
-# # plotter.add_text("Solution after 5 iterations", font_size=10)
-# # # Adjust the camera position
-# # plotter.camera_position = [(0.5, 0.5, 2.5), (0.5, 0.5, 0), (0, 1, 0)]
-# # # Show the plot
-# # plotter.show(jupyter_backend="static")
-
-# + tags=["active-ipynb"]
-# # import matplotlib.pyplot as plt
-# # plt.plot(functional_values)
-# # plt.xlabel("Optimisation iteration")
-# # plt.ylabel("Reduced functional")
-# # plt.title("Optimisation convergence")
-# -
 
