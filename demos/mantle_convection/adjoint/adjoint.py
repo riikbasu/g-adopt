@@ -159,7 +159,7 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # `timesteps - 10`.
 
 # initial_timestep = timesteps - 10
-initial_timestep = timesteps - 50
+initial_timestep = 0
 
 # Define the Control Space
 # ------------------------
@@ -262,8 +262,8 @@ norm_u_surface = assemble(dot(uobs, uobs) * ds_t)
 t_misfit = assemble((T - Tobs) ** 2 * dx)
 
 # Weighting terms
-alpha_u = 1e-1
-alpha_d = 1e-3
+alpha_u = 1e-2
+alpha_d = 1e-4
 alpha_s = 1e-3
 
 # Define overall objective functional:
@@ -406,13 +406,13 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # Here, we set the number of iterations to only 5, as opposed to the default 100. We also adjust the step-length for this problem,
 # by setting it to a lower value than our default.
 
-minimisation_parameters["Status Test"]["Iteration Limit"] = 10
-minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
-minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
-minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
-minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
-minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
-minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
+minimisation_parameters["Status Test"]["Iteration Limit"] = 40
+# minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
+# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
+# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
+# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
+# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
+# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
 
 # A notable feature of this optimisation approach in ROL is its checkpointing capability. For every iteration,
 # all information necessary to restart the optimisation from that iteration is saved in the specified `checkpoint_dir`.

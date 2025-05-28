@@ -160,8 +160,8 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-# initial_timestep = timesteps - 10
-initial_timestep = 0
+initial_timestep = timesteps - 2
+# initial_timestep = 0
 
 # Define the Control Space
 # ------------------------
@@ -398,7 +398,7 @@ import datetime
 import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 20
+minimisation_parameters["Status Test"]["Iteration Limit"] = 2
 minimisation_parameters["Step"]["Line Search"] = {
   "Descent Method": {"Type": "Newton-Krylov"}
 }
@@ -412,7 +412,7 @@ rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_prod
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
 rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
 
-solutions_vtk = VTKFile("solutions_NK.pvd")
+solutions_vtk = VTKFile("solutions_NK_test.pvd")
 functional_values = []
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
@@ -530,7 +530,7 @@ class StatusTest(ROL.StatusTest):
 
         # Write functional and misfit values to a file (appending to avoid overwriting)
         if MPI.COMM_WORLD.Get_rank() == 0:        
-            with open("functional_NK.txt", "a") as f:
+            with open("functional_NK_test.txt", "a") as f:
                 if functional_values:            
                     f.write(f"{functional_values[-1]}, {initial_misfit}, {final_misfit}\n")
                 else:
@@ -549,9 +549,7 @@ rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective)
 elapsed_time_hess = elapsed_time_hess/counter_hess
 elapsed_time_func = elapsed_time_func/counter_func
 elapsed_time_grad = elapsed_time_grad/counter_grad
-with open("functional_NK.txt", "a") as f:
+with open("functional_NK_test.txt", "a") as f:
     f.write(f"Total Hessians: {counter_hess}, Hessian time avg:{elapsed_time_hess}\n Total functionals: {counter_func}, Functional time avg:{elapsed_time_func}\n Total Gradients: {counter_grad}, Gradient time avg:{elapsed_time_grad}\n")
 # -
-
-
 

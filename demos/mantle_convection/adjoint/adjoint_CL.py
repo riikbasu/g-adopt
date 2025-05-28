@@ -391,28 +391,29 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
-# ## Using Line search with Netwon-Krylov method
+# ## Using Coleman-Li
 
 # +
 import datetime
 import time
 
+bounds=(T_lb, T_ub)
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 20
-minimisation_parameters["Step"]["Line Search"] = {
-  "Descent Method": {"Type": "Newton-Krylov"}
-}
-# minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
-# try:
-#     rol_secant = ROL.lBFGS(parameters["General"]["Secant"]["Maximum Storage"])
-# except KeyError:
-#     # Use the default storage value
-#     rol_secant = ROL.lBFGS()
+minimisation_parameters["Status Test"]["Iteration Limit"] = 40
+minimisation_parameters["General"]["Use Inexact Hessian-Times-A-Vector"] = True
+# minimisation_parameters["Step"]["Line Search"] = {
+#   "Descent Method": {"Type": "Newton-Krylov"}
+# }
+try:
+    rol_secant = ROL.lBFGS(parameters["General"]["Secant"]["Maximum Storage"])
+except KeyError:
+    # Use the default storage value
+    rol_secant = ROL.lBFGS()
 rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_product="L2")
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
-rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
+rol_algorithm = ROL.ColemanLiAlgorithm(rol_params, rol_secant)
 
-solutions_vtk = VTKFile("solutions_NK.pvd")
+solutions_vtk = VTKFile("solutions_CL.pvd")
 functional_values = []
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
@@ -530,7 +531,7 @@ class StatusTest(ROL.StatusTest):
 
         # Write functional and misfit values to a file (appending to avoid overwriting)
         if MPI.COMM_WORLD.Get_rank() == 0:        
-            with open("functional_NK.txt", "a") as f:
+            with open("functional_CL.txt", "a") as f:
                 if functional_values:            
                     f.write(f"{functional_values[-1]}, {initial_misfit}, {final_misfit}\n")
                 else:
@@ -545,13 +546,12 @@ class StatusTest(ROL.StatusTest):
 
 
 rol_algorithm.setStatusTest(StatusTest(rol_params), False)
-rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective)
+rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective, rol_solver.bounds)
 elapsed_time_hess = elapsed_time_hess/counter_hess
 elapsed_time_func = elapsed_time_func/counter_func
 elapsed_time_grad = elapsed_time_grad/counter_grad
-with open("functional_NK.txt", "a") as f:
+with open("functional_CL.txt", "a") as f:
     f.write(f"Total Hessians: {counter_hess}, Hessian time avg:{elapsed_time_hess}\n Total functionals: {counter_func}, Functional time avg:{elapsed_time_func}\n Total Gradients: {counter_grad}, Gradient time avg:{elapsed_time_grad}\n")
 # -
-
 
 
