@@ -16,6 +16,10 @@
 # checkpoint file on our servers.  These fields serve as benchmarks for evaluating our inverse problem's performance. To
 # download the reference benchmark checkpoint file if it doesn't already exist, execute the following command:
 
+# +
+# import petsc4py
+# petsc4py.init(['-log_view', 'solver_log.txt', '-ksp_monitor'])
+
 # + tags=["active-ipynb"]
 # ![ ! -f adjoint-demo-checkpoint-state.h5 ] && wget https://data.gadopt.org/demos/adjoint-demo-checkpoint-state.h5
 # -
@@ -144,9 +148,13 @@ temp_bcs = {
 }
 
 # Setup Energy and Stokes solver
-energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs)
+energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs, solver_parameters="iterative" )
+# energy_solver.solver_parameters['ksp_converged_reason'] = None
+# energy_solver.solver_parameters['ksp_view'] = None
 stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
-                             nullspace=Z_nullspace, transpose_nullspace=Z_nullspace, constant_jacobian=True)
+                             nullspace=Z_nullspace, transpose_nullspace=Z_nullspace, constant_jacobian=True, solver_parameters="iterative" )
+# stokes_solver.solver_parameters['ksp_converged_reason'] = None
+# stokes_solver.solver_parameters['ksp_view'] = None
 # -
 
 # Specify Problem Length
@@ -158,8 +166,8 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-# initial_timestep = timesteps - 10
-initial_timestep = 0
+initial_timestep = timesteps - 5
+# initial_timestep = 0
 
 # Define the Control Space
 # ------------------------
@@ -268,7 +276,8 @@ alpha_s = 1e-3
 
 # Define overall objective functional:
 objective = (
-    t_misfit +
+    t_misfit 
+    +
     alpha_u * (norm_obs * u_misfit / timesteps / norm_u_surface) +
     alpha_d * (norm_obs * damping / norm_damping) +
     alpha_s * (norm_obs * smoothing / norm_smoothing)
@@ -389,57 +398,80 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
-# Using the Lin-Moré optimiser
-# ----------------------------
-#
-# In this tutorial, we employ the trust region method of Lin and Moré (1999) implemented in ROL (Rapid Optimization Library).
-# Lin-Moré is a truncated Newton method, which involves the repeated application of an iterative algorithm to approximately
-# solve Newton’s equations (Dembo and Steihaug, 1983).
-#
-# Lin-Moré effectively handles provided bound constraints by ensuring that variables remain within their specified bounds.
-# During each iteration, variables are classified into "active" and "inactive" sets. Variables at their bounds that do not
-# allow descent are considered active and are fixed during the iteration. The remaining variables, which can change without
-# violating the bounds, are inactive. These properties make the algorithm robust and efficient for solving bound-constrained
-# optimisation problems.
-#
-# For our solution of the optimisation problem we use the pre-defined paramters set in gadopt by using `minimsation_parameters`.
-# Here, we set the number of iterations to only 5, as opposed to the default 100. We also adjust the step-length for this problem,
-# by setting it to a lower value than our default.
+# ## Using Lin-More optimiser
 
-minimisation_parameters["Status Test"]["Iteration Limit"] = 40
-minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
-minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
-minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
-minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
-minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
-minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
+# +
+# minimisation_parameters["Status Test"]["Iteration Limit"] = 40
+# minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
+# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
+# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
+# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
+# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
+# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
 
-# A notable feature of this optimisation approach in ROL is its checkpointing capability. For every iteration,
-# all information necessary to restart the optimisation from that iteration is saved in the specified `checkpoint_dir`.
+# +
+# # Define the LinMore Optimiser class with checkpointing capability:
+# optimiser = LinMoreOptimiser(
+#     minimisation_problem,
+#     minimisation_parameters,
+#     checkpoint_dir="optimisation_checkpoint",
+# )
 
-# Define the LinMore Optimiser class with checkpointing capability:
-optimiser = LinMoreOptimiser(
-    minimisation_problem,
-    minimisation_parameters,
-    checkpoint_dir="optimisation_checkpoint",
-)
+# +
+# solutions_vtk = VTKFile("solutions.pvd")
+# solution_container = Function(Tic.function_space(), name="Solutions")
+# functional_values = []
 
-# For sake of book-keeping the simulation, we have also implemented a user-defined way of
-# recording information that might be used to check the optimisation performance. This
-# callback function will be executed at the end of each iteration. Here, we write out
-# the control field, i.e., the reconstructed intial temperature field, at the end of
-# each iteration. To access the last value of *an overloaded object* we should access the
-# `.block_variable.checkpoint` method as below.
-#
-# For the sake of this demo, we also record the values of the reduced
-# functional directly in order to produce a plot of the convergence.
+
+# def callback():
+#     solution_container.assign(Tic.block_variable.checkpoint)
+#     solutions_vtk.write(solution_container)
+#     final_temperature_misfit = assemble(
+#         (T.block_variable.checkpoint - Tobs) ** 2 * dx
+#     )
+#     log(f"Terminal Temperature Misfit: {final_temperature_misfit}")
+
+
+# def record_value(value, *args):
+#     functional_values.append(value)
+
+
+# optimiser.add_callback(callback)
+# reduced_functional.eval_cb_post = record_value
+
+# # If it existed, we could restore the optimisation from last checkpoint:
+# # optimiser.restore()
+
+# # Run the optimisation
+# optimiser.run()
+
+# # Write the functional values to a file
+# with open("functional.txt", "w") as f:
+#     f.write("\n".join(str(x) for x in functional_values))
+# -
+
+# ## Using Line search with Netwon-Krylov method
 
 # +
 import datetime
 import time
 
-solutions_vtk = VTKFile("solutions_LM_opt.pvd")
-functional_values = []
+minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
+minimisation_parameters["Status Test"]["Iteration Limit"] = 5
+minimisation_parameters["Step"]["Line Search"] = {
+  "Descent Method": {"Type": "Newton-Krylov"}
+}
+# minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
+# try:
+#     rol_secant = ROL.lBFGS(parameters["General"]["Secant"]["Maximum Storage"])
+# except KeyError:
+#     # Use the default storage value
+#     rol_secant = ROL.lBFGS()
+rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_product="L2")
+rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
+rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
+
+solutions_vtk = VTKFile("solutions_NK_test_5_iter_only_misfit_2.pvd")
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
 functional_values = []
@@ -456,7 +488,6 @@ elapsed_time_func = 0
 elapsed_time_grad = 0
 iteration = 0
 
-# Profiling
 # Profiling
 def record_pre_hess(*args):
     global counter_hess
@@ -531,94 +562,67 @@ def record_misfit_values(init_misfit, final_misfit):
     final_misfit_values.append(final_misfit)
 
 
-def callback():
-    global iteration
-    initial_misfit = assemble(
-        (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
-    )
-    final_misfit = assemble(
-        (T.block_variable.checkpoint - Tobs) ** 2 * dx
-    )
 
-    reduced_functional.eval_cb_pre = record_pre_func
-    reduced_functional.eval_cb_post = record_post_func
-    reduced_functional.derivative_cb_pre = record_pre_grad
-    reduced_functional.derivative_cb_post = record_post_grad
-    reduced_functional.hessian_cb_pre = record_pre_hess
-    reduced_functional.hessian_cb_post = record_post_hess
-    record_misfit_values(initial_misfit, final_misfit)
-    
-    # Print output for ease of tracking simulation progress:
-    if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-        log(f"No Hessians, functionals and gradients calculated \n")
-    elif counter_hess == 0 and counter_grad == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0 ; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-    elif counter_hess == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-    else:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")  
-    if functional_values:
-        log(f"Functional: {functional_values[-1]};  Misfit (IC): {initial_misfit};  Misfit (Final): {final_misfit}")
-    else:
-        log(f"Functional value not recorded; Misfit (IC): {initial_misfit}; Misfit (Final): {final_misfit}")
+class StatusTest(ROL.StatusTest):
+    def check(self, status):
+        # callback stuff goes here
+        global iteration
+        initial_misfit = assemble(
+            (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
+        )
+        final_misfit = assemble(
+            (T.block_variable.checkpoint - Tobs) ** 2 * dx
+        )
+        record_misfit_values(initial_misfit, final_misfit)
+        
+        # Print output for ease of tracking simulation progress:
+        if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
+            log(f"No Hessians, functionals and gradients calculated \n")
+        elif counter_hess == 0 and counter_grad == 0:
+            log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0 ; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
+        elif counter_hess == 0:
+            log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
+        else:
+            log(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")  
+        if functional_values:
+            log(f"Functional: {functional_values[-1]};  Misfit (IC): {initial_misfit};  Misfit (Final): {final_misfit}")
+        else:
+            log(f"Functional value not recorded; Misfit (IC): {initial_misfit}; Misfit (Final): {final_misfit}")
 
-    # Write functional and misfit values to a file (appending to avoid overwriting)
-    if MPI.COMM_WORLD.Get_rank() == 0:        
-        with open("functional_LM_opt.txt", "a") as f:
-            f.write(f"Iteration: {iteration} \n")
-            if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-                f.write(f"No Hessians, functionals and gradients calculated \n")
-            elif counter_hess == 0 and counter_grad == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-            elif counter_hess == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            else:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            if functional_values:            
-                f.write(f"Functional value: {functional_values[-1]}, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
-            else:
-                f.write(f"Functional value: 0.0, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
+        # Write functional and misfit values to a file (appending to avoid overwriting)
+        if MPI.COMM_WORLD.Get_rank() == 0:        
+            with open("functional_NK_test_5_iter_only_misfit_2.txt", "a") as f:
+                f.write(f"Iteration: {iteration} \n")
+                if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
+                    f.write(f"No Hessians, functionals and gradients calculated \n")
+                elif counter_hess == 0 and counter_grad == 0:
+                    f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
+                elif counter_hess == 0:
+                    f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
+                else:
+                    f.write(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
+                if functional_values:            
+                    f.write(f"Functional value: {functional_values[-1]}, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
+                else:
+                    f.write(f"Functional value: 0.0, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
 
-    # Write VTK output:
-    solution_IC.assign(Tic.block_variable.checkpoint)
-    solution_final.assign(T.block_variable.checkpoint)        
-    solutions_vtk.write(solution_IC, solution_final)
-    iteration = iteration + 1
+        # Write VTK output:
+        solution_IC.assign(Tic.block_variable.checkpoint)
+        solution_final.assign(T.block_variable.checkpoint)        
+        solutions_vtk.write(solution_IC, solution_final)
+        iteration = iteration + 1
+        return super().check(status)
 
-optimiser.add_callback(callback)
+reduced_functional.eval_cb_pre = record_pre_func
+reduced_functional.eval_cb_post = record_post_func
+reduced_functional.derivative_cb_pre = record_pre_grad
+reduced_functional.derivative_cb_post = record_post_grad
+reduced_functional.hessian_cb_pre = record_pre_hess
+reduced_functional.hessian_cb_post = record_post_hess
 
-# If it existed, we could restore the optimisation from last checkpoint:
-# optimiser.restore()
-
-# Run the optimisation
-optimiser.run()
+rol_algorithm.setStatusTest(StatusTest(rol_params), False)
+rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective)
 # -
 
-# At this point a total number of 5 iterations are performed. For the example
-# case here with 10 timesteps this should result an adequete reduction
-# in the objective functional. Now we can look at the solution
-# visually. For the actual simulation with 80 time-steps, this solution
-# could be compared to `Tic_ref` as the "true solution".
 
-# + tags=["active-ipynb"]
-# # import pyvista as pv
-# # VTKFile("./solution.pvd").write(optimiser.rol_solver.rolvector.dat[0])
-# # dataset = pv.read('./solution.pvd')
-# # # Create a plotter object
-# # plotter = pv.Plotter()
-# # # Add the dataset to the plotter
-# # plotter.add_mesh(dataset, scalars=dataset[0].array_names[0], cmap='coolwarm')
-# # plotter.add_text("Solution after 5 iterations", font_size=10)
-# # # Adjust the camera position
-# # plotter.camera_position = [(0.5, 0.5, 2.5), (0.5, 0.5, 0), (0, 1, 0)]
-# # # Show the plot
-# # plotter.show(jupyter_backend="static")
-
-# + tags=["active-ipynb"]
-# # import matplotlib.pyplot as plt
-# # plt.plot(functional_values)
-# # plt.xlabel("Optimisation iteration")
-# # plt.ylabel("Reduced functional")
-# # plt.title("Optimisation convergence")
-# -
 
