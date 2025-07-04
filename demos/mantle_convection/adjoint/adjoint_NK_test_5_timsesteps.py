@@ -16,9 +16,7 @@
 # checkpoint file on our servers.  These fields serve as benchmarks for evaluating our inverse problem's performance. To
 # download the reference benchmark checkpoint file if it doesn't already exist, execute the following command:
 
-# +
-# import petsc4py
-# petsc4py.init(['-log_view', 'solver_log.txt', '-ksp_monitor'])
+
 
 # + tags=["active-ipynb"]
 # ![ ! -f adjoint-demo-checkpoint-state.h5 ] && wget https://data.gadopt.org/demos/adjoint-demo-checkpoint-state.h5
@@ -148,13 +146,9 @@ temp_bcs = {
 }
 
 # Setup Energy and Stokes solver
-energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs, solver_parameters="iterative" )
-# energy_solver.solver_parameters['ksp_converged_reason'] = None
-# energy_solver.solver_parameters['ksp_view'] = None
+energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs)
 stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
-                             nullspace=Z_nullspace, transpose_nullspace=Z_nullspace, constant_jacobian=True, solver_parameters="iterative" )
-# stokes_solver.solver_parameters['ksp_converged_reason'] = None
-# stokes_solver.solver_parameters['ksp_view'] = None
+                             nullspace=Z_nullspace, transpose_nullspace=Z_nullspace, constant_jacobian=True)
 # -
 
 # Specify Problem Length
@@ -166,8 +160,8 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
+# initial_timestep = timesteps - 10
 initial_timestep = timesteps - 5
-# initial_timestep = 0
 
 # Define the Control Space
 # ------------------------
@@ -276,8 +270,7 @@ alpha_s = 1e-3
 
 # Define overall objective functional:
 objective = (
-    t_misfit 
-    +
+    t_misfit +
     alpha_u * (norm_obs * u_misfit / timesteps / norm_u_surface) +
     alpha_d * (norm_obs * damping / norm_damping) +
     alpha_s * (norm_obs * smoothing / norm_smoothing)
@@ -398,58 +391,6 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
-# ## Using Lin-More optimiser
-
-# +
-# minimisation_parameters["Status Test"]["Iteration Limit"] = 40
-# minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
-# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
-# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
-# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
-# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
-# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
-
-# +
-# # Define the LinMore Optimiser class with checkpointing capability:
-# optimiser = LinMoreOptimiser(
-#     minimisation_problem,
-#     minimisation_parameters,
-#     checkpoint_dir="optimisation_checkpoint",
-# )
-
-# +
-# solutions_vtk = VTKFile("solutions.pvd")
-# solution_container = Function(Tic.function_space(), name="Solutions")
-# functional_values = []
-
-
-# def callback():
-#     solution_container.assign(Tic.block_variable.checkpoint)
-#     solutions_vtk.write(solution_container)
-#     final_temperature_misfit = assemble(
-#         (T.block_variable.checkpoint - Tobs) ** 2 * dx
-#     )
-#     log(f"Terminal Temperature Misfit: {final_temperature_misfit}")
-
-
-# def record_value(value, *args):
-#     functional_values.append(value)
-
-
-# optimiser.add_callback(callback)
-# reduced_functional.eval_cb_post = record_value
-
-# # If it existed, we could restore the optimisation from last checkpoint:
-# # optimiser.restore()
-
-# # Run the optimisation
-# optimiser.run()
-
-# # Write the functional values to a file
-# with open("functional.txt", "w") as f:
-#     f.write("\n".join(str(x) for x in functional_values))
-# -
-
 # ## Using Line search with Netwon-Krylov method
 
 # +
@@ -457,7 +398,7 @@ import datetime
 import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 5
+minimisation_parameters["Status Test"]["Iteration Limit"] = 10
 minimisation_parameters["Step"]["Line Search"] = {
   "Descent Method": {"Type": "Newton-Krylov"}
 }
@@ -471,7 +412,7 @@ rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_prod
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
 rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
 
-solutions_vtk = VTKFile("solutions_NK_test_5_iter_only_misfit_2.pvd")
+solutions_vtk = VTKFile("solutions_NK.pvd")
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
 functional_values = []
@@ -573,6 +514,13 @@ class StatusTest(ROL.StatusTest):
         final_misfit = assemble(
             (T.block_variable.checkpoint - Tobs) ** 2 * dx
         )
+
+        reduced_functional.eval_cb_pre = record_pre_func
+        reduced_functional.eval_cb_post = record_post_func
+        reduced_functional.derivative_cb_pre = record_pre_grad
+        reduced_functional.derivative_cb_post = record_post_grad
+        reduced_functional.hessian_cb_pre = record_pre_hess
+        reduced_functional.hessian_cb_post = record_post_hess
         record_misfit_values(initial_misfit, final_misfit)
         
         # Print output for ease of tracking simulation progress:
@@ -591,7 +539,7 @@ class StatusTest(ROL.StatusTest):
 
         # Write functional and misfit values to a file (appending to avoid overwriting)
         if MPI.COMM_WORLD.Get_rank() == 0:        
-            with open("functional_NK_test_5_iter_only_misfit_2.txt", "a") as f:
+            with open("functional_NK.txt", "a") as f:
                 f.write(f"Iteration: {iteration} \n")
                 if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
                     f.write(f"No Hessians, functionals and gradients calculated \n")
@@ -612,13 +560,6 @@ class StatusTest(ROL.StatusTest):
         solutions_vtk.write(solution_IC, solution_final)
         iteration = iteration + 1
         return super().check(status)
-
-reduced_functional.eval_cb_pre = record_pre_func
-reduced_functional.eval_cb_post = record_post_func
-reduced_functional.derivative_cb_pre = record_pre_grad
-reduced_functional.derivative_cb_post = record_post_grad
-reduced_functional.hessian_cb_pre = record_pre_hess
-reduced_functional.hessian_cb_post = record_post_hess
 
 rol_algorithm.setStatusTest(StatusTest(rol_params), False)
 rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective)
