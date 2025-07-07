@@ -5,6 +5,18 @@ from gadopt import *
 from gadopt.inverse import *
 import matplotlib.pyplot as plt
 
+# Define the required global variables here
+counter_hess = 0
+counter_func = 0
+counter_grad = 0
+start_time_hess = 0
+start_time_func = 0
+start_time_grad = 0
+elapsed_time_hess = 0
+elapsed_time_func = 0
+elapsed_time_grad = 0
+iteration = 0
+
 def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_condition, abs_tol, rel_tol, iterations):
     # Adjoint inverse reconstruction
     # ==============================
@@ -427,16 +439,6 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
     functional_values = []
     initial_misfit_values = []
     final_misfit_values = []
-    counter_hess = 0
-    counter_func = 0
-    counter_grad = 0
-    start_time_hess = 0
-    start_time_func = 0
-    start_time_grad = 0
-    elapsed_time_hess = 0
-    elapsed_time_func = 0
-    elapsed_time_grad = 0
-    iteration = 0
     
     # Profiling
     def record_pre_hess(*args):
