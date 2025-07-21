@@ -592,3 +592,14 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+functional_file = "GS"
+parameter_set = 6
+line_search_type = "Golden Section"
+curvature_condition = "Strong Wolfe Conditions"
+abs_tol = 1.00E-04
+rel_tol = 1.00E-02
+iterations = 100
+NK_batch_test(functional_file, parameter_set, line_search_type, curvature_condition, abs_tol, rel_tol, iterations)
+
+
