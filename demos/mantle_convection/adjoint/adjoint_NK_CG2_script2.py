@@ -206,12 +206,6 @@ T.project(Tic, bcs=energy_solver.strong_bcs)
 # We continue by integrating the solutions at each time-step.
 # Notice that we cumulatively compute the misfit term with respect to the
 # surface velocity observable.
-# -
-
-new_checkpoint_filename = 'Final_State_new.h5'
-new_checkpoint_file = CheckpointFile(new_checkpoint_filename, mode="r")
-new_temperature_timestepping_info = new_checkpoint_file.get_timestepping_history(mesh, "Initial Temperature")
-print(new_temperature_timestepping_info)
 
 # +
 u_misfit = 0.0
