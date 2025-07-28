@@ -181,13 +181,7 @@ Q1 = FunctionSpace(mesh, "CG", 1)
 # Note that this layer average will later be used for the smoothing term in our objective functional.
 with CheckpointFile(checkpoint_filename, mode="r") as checkpoint_file:
     Taverage = checkpoint_file.load_function(mesh, "Average_Temperature", idx=initial_timestep)
-Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
-
-# Given that Tic will be updated during the optimisation, we also create a function to store our initial guess,
-# which we will later use for smoothing. Note that since smoothing is executed in the control space, we must
-# specify boundary conditions on this term in that same Q1 space.
-T0_bcs = [DirichletBC(Q1, 0., boundary.top), DirichletBC(Q1, 1., boundary.bottom)]
-T0 = Function(Q1, name="Initial_Guess_Temperature").project(Tic, bcs=T0_bcs)
+# Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
 
 # Reassign Tic with the new state
 new_checkpoint_filename = 'Final_State.h5'
@@ -196,6 +190,12 @@ new_temperature_timestepping_info = new_checkpoint_file.get_timestepping_history
 Tic = new_checkpoint_file.load_function(mesh, "Initial Temperature", idx=int(new_temperature_timestepping_info["index"][-1]))
 Tic.rename("Initial_Condition_Temperature")
 new_checkpoint_file.close()
+
+# Given that Tic will be updated during the optimisation, we also create a function to store our initial guess,
+# which we will later use for smoothing. Note that since smoothing is executed in the control space, we must
+# specify boundary conditions on this term in that same Q1 space.
+T0_bcs = [DirichletBC(Q1, 0., boundary.top), DirichletBC(Q1, 1., boundary.bottom)]
+T0 = Function(Q1, name="Initial_Guess_Temperature").project(Tic, bcs=T0_bcs)
 
 # We next make pyadjoint aware of our control problem:
 control = Control(Tic)
@@ -206,6 +206,9 @@ T.project(Tic, bcs=energy_solver.strong_bcs)
 # We continue by integrating the solutions at each time-step.
 # Notice that we cumulatively compute the misfit term with respect to the
 # surface velocity observable.
+
+# +
+# print(new_temperature_timestepping_info["index"][1], temperature_timestepping_info)
 
 # +
 u_misfit = 0.0
@@ -583,12 +586,12 @@ class StatusTest(ROL.StatusTest):
         # Write checkpoint
         with CheckpointFile("Final_State_new.h5", "w") as final_checkpoint:
             final_checkpoint.save_mesh(mesh)
-            final_checkpoint.save_function(Tic, name="Initial Temperature", idx=iteration,
+            final_checkpoint.save_function(solution_IC, name="Initial Temperature", idx=iteration,
                                   timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
-            final_checkpoint.save_function(T, name="Temperature", idx=iteration,
-                                  timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
-            final_checkpoint.save_function(z, name="Stokes", idx=iteration,
-                                  timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
+            # final_checkpoint.save_function(solution_final, name="Temperature", idx=iteration,
+            #                       timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
+            # final_checkpoint.save_function(z, name="Stokes", idx=iteration,
+            #                       timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
         iteration = iteration + 1
         return super().check(status)
 

@@ -575,12 +575,12 @@ class StatusTest(ROL.StatusTest):
         # Write checkpoint
         with CheckpointFile("Final_State.h5", "w") as final_checkpoint:
             final_checkpoint.save_mesh(mesh)
-            final_checkpoint.save_function(Tic, name="Initial Temperature", idx=iteration,
+            final_checkpoint.save_function(solution_IC, name="Initial Temperature", idx=iteration,
                                   timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
-            final_checkpoint.save_function(T, name="Temperature", idx=iteration,
-                                  timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
-            final_checkpoint.save_function(z, name="Stokes", idx=iteration,
-                                  timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
+            # final_checkpoint.save_function(T, name="Temperature", idx=iteration,
+            #                       timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
+            # final_checkpoint.save_function(z, name="Stokes", idx=iteration,
+            #                       timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
         iteration = iteration + 1
         return super().check(status)
 
