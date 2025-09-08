@@ -160,8 +160,8 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-# initial_timestep = timesteps - 3
-initial_timestep = 0
+initial_timestep = timesteps - 2
+# initial_timestep = 0
 
 # Define the Control Space
 # ------------------------
@@ -184,7 +184,7 @@ with CheckpointFile(checkpoint_filename, mode="r") as checkpoint_file:
 # Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
 
 # Reassign Tic with the new state
-new_checkpoint_filename = 'Final_State.h5'
+new_checkpoint_filename = 'LM_checkpoint.h5'
 new_checkpoint_file = CheckpointFile(new_checkpoint_filename, mode="r")
 new_temperature_timestepping_info = new_checkpoint_file.get_timestepping_history(mesh, "Initial Temperature")
 Tic = new_checkpoint_file.load_function(mesh, "Initial Temperature", idx=int(new_temperature_timestepping_info["index"][-1]))
@@ -409,7 +409,7 @@ import datetime
 import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 5
+minimisation_parameters["Status Test"]["Iteration Limit"] = 3
 minimisation_parameters["General"]["Krylov"] = {
     "Absolute Tolerance": 1e-1,
     "Relative Tolerance": 1e-1,
@@ -518,11 +518,20 @@ def record_post_grad(checkpoint, derivatives, values, *args):
     log(f"Gradient calculation finished with count: {counter_grad} at time: {end_time_grad_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
     return derivatives
 
-# Log values of initial and final misfit:
-def record_misfit_values(init_misfit, final_misfit):
-    initial_misfit_values.append(init_misfit)
-    final_misfit_values.append(final_misfit)
+# # Log values of initial and final misfit:
+# def record_misfit_values(init_misfit, final_misfit):
+#     initial_misfit_values.append(init_misfit)
+#     final_misfit_values.append(final_misfit)
 
+reduced_functional.eval_cb_pre = record_pre_func
+reduced_functional.eval_cb_post = record_post_func
+reduced_functional.derivative_cb_pre = record_pre_grad
+reduced_functional.derivative_cb_post = record_post_grad
+reduced_functional.hessian_cb_pre = record_pre_hess
+reduced_functional.hessian_cb_post = record_post_hess
+# record_misfit_values(initial_misfit, final_misfit)
+my_file = CheckpointFile("Final_State_test_new.h5", "w")
+my_file.save_mesh(mesh)
 
 
 class StatusTest(ROL.StatusTest):
@@ -537,13 +546,7 @@ class StatusTest(ROL.StatusTest):
             (T.block_variable.checkpoint - Tobs) ** 2 * dx
         )
 
-        reduced_functional.eval_cb_pre = record_pre_func
-        reduced_functional.eval_cb_post = record_post_func
-        reduced_functional.derivative_cb_pre = record_pre_grad
-        reduced_functional.derivative_cb_post = record_post_grad
-        reduced_functional.hessian_cb_pre = record_pre_hess
-        reduced_functional.hessian_cb_post = record_post_hess
-        record_misfit_values(initial_misfit, final_misfit)
+
         
         # Print output for ease of tracking simulation progress:
         if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
@@ -581,9 +584,7 @@ class StatusTest(ROL.StatusTest):
         solution_final.assign(T.block_variable.checkpoint)        
         solutions_vtk.write(solution_IC, solution_final)
         # Write checkpoint
-        with CheckpointFile("Final_State_new.h5", "w") as final_checkpoint:
-            final_checkpoint.save_mesh(mesh)
-            final_checkpoint.save_function(solution_IC, name="Initial Temperature", idx=iteration,
+        my_file.save_function(solution_IC, name="Initial Temperature", idx=iteration,
                                   timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
             # final_checkpoint.save_function(solution_final, name="Temperature", idx=iteration,
             #                       timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})

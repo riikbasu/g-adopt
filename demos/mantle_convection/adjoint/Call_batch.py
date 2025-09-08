@@ -12,8 +12,8 @@ import pandas as pd
 
 # %%
 # Change these inputs
-filename = 'Parameter_List_Adjoint_tutorial_Set_4.csv'
-functional_series = './functionals/functional_Set_4_'
+filename = 'Parameter_List_Adjoint_tutorial_Set_2.csv'
+functional_series = './functionals/regenerated/Tic_0/functional_Set_2_'
 
 # df = pd.read_csv(filename)
 # #checking the number of empty rows in th csv file

@@ -160,7 +160,7 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-# initial_timestep = timesteps - 5
+# initial_timestep = timesteps - 3
 initial_timestep = 0
 
 # Define the Control Space
@@ -339,12 +339,15 @@ pause_annotation()
 # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
 # that our gradients are accurate and reliable for optimisation.
 
-gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
+# +
+# gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
 
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots()
-collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-fig.colorbar(collection);
+# +
+# import matplotlib.pyplot as plt
+# fig, axes = plt.subplots()
+# collection = tripcolor(gradJ, axes=axes, cmap='viridis')
+# fig.colorbar(collection);
+# -
 
 # Running the inversion
 # ---------------------
@@ -399,8 +402,16 @@ import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
 minimisation_parameters["Status Test"]["Iteration Limit"] = 20
+minimisation_parameters["General"]["Secant"] = {
+    "Use as Preconditioner": True
+}
 minimisation_parameters["Step"]["Trust Region"] = {
-    "Subproblem Solver": {"Type": "Double Dogleg"}
+    "Subproblem Solver": "Double Dogleg",
+    "Radius Shrinking Threshold": 0.15,
+    "Radius Growing Threshold": 0.65,
+    "Radius Shrinking Rate (Negative rho)": 0.03125,
+    "Radius Shrinking Rate (Positive rho)": 0.125,
+    "Radius Growing Rate": 5
 }
 # minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
 # try:
@@ -410,7 +421,7 @@ minimisation_parameters["Step"]["Trust Region"] = {
 #     rol_secant = ROL.lBFGS()
 rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_product="L2")
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
-rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
+rol_algorithm = ROL.TrustRegionAlgorithm(rol_params)
 
 solutions_vtk = VTKFile("solutions_TR_DDL.pvd")
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")

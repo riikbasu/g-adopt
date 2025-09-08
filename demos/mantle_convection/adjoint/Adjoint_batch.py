@@ -97,7 +97,8 @@ def functional(functional_file, iteration_limit, initial_radius, radius_growing_
     # guess is set to the 1-D average of the forward model. We first load that, at the relevant timestep.
     # Note that this layer average will later be used for the smoothing term in our objective functional.
     with CheckpointFile(checkpoint_filename, mode="r") as checkpoint_file:
-        Taverage = checkpoint_file.load_function(mesh, "Average_Temperature", idx=initial_timestep)
+        # Taverage = checkpoint_file.load_function(mesh, "Average_Temperature", idx=initial_timestep)
+        Taverage = checkpoint_file.load_function(mesh, "Average_Temperature", idx=0)
     Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
     
     # Given that Tic will be updated during the optimisation, we also create a function to store our initial guess,

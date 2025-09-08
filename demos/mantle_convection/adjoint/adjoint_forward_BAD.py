@@ -84,7 +84,7 @@ averager.extrapolate_layer_average(Taverage, averager.get_layer_average(T))
 # By saving the initial state, we can compare it against the final state to see how the system evolved, which is analogous
 # to how seismic tomography uses initial models to interpret Earth's interior after simulation.
 
-checkpoint_file = CheckpointFile("adjoint-demo-checkpoint-state.h5", "w")
+checkpoint_file = CheckpointFile("adjoint-demo-checkpoint-state-test.h5", "w")
 checkpoint_file.save_mesh(mesh)
 checkpoint_file.save_function(T, name="Temperature", idx=0)
 
@@ -96,6 +96,10 @@ checkpoint_file.save_function(T, name="Temperature", idx=0)
 # +
 Ra = Constant(1e6)
 approximation = BoussinesqApproximation(Ra)
+
+# Approximations for BAD
+Ra_bad = Constant(-1e6)
+approximation_bad = BoussinesqApproximation(Ra_bad, kappa=1e-10)
 
 delta_t = Constant(4e-6)
 timesteps = 80
@@ -142,6 +146,20 @@ stokes_solver = StokesSolver(
     nullspace=Z_nullspace,
     transpose_nullspace=Z_nullspace,
 )
+# Solvers for BAD
+energy_solver_bad = EnergySolver(
+    T, u, approximation_bad, delta_t, ImplicitMidpoint, bcs=temp_bcs
+)
+
+stokes_solver_bad = StokesSolver(
+    z,
+    T,
+    approximation_bad,
+    bcs=stokes_bcs,
+    constant_jacobian=True,
+    nullspace=Z_nullspace,
+    transpose_nullspace=Z_nullspace,
+)
 # -
 
 # Time Loop
@@ -150,7 +168,7 @@ stokes_solver = StokesSolver(
 # the velocity field for later use, and periodically output the results.
 
 # +
-output_file = VTKFile("output.pvd")  # Create output file for visualisation.
+output_file = VTKFile("output_test.pvd")  # Create output file for visualisation.
 for timestep in range(0, timesteps):
     output_file.write(*z.subfunctions, T, Taverage)
     stokes_solver.solve()
@@ -171,3 +189,25 @@ checkpoint_file.close()
 # This concludes the forward simulation to generate reference fields for the adjoint inversion. The final temperature
 # field, after being convected forward for 80 timesteps, serves as the reference temperature field, analogous to a
 # seismic tomography image, which allows us to study plume formation and other mantle dynamics features.
+
+# +
+checkpoint_file_bad = CheckpointFile("adjoint-demo-checkpoint-state-bad.h5", "w")
+checkpoint_file_bad.save_mesh(mesh)
+# checkpoint_file_bad.save_function(T, name="Temperature", idx=0)
+
+output_file_bad = VTKFile("output_bad.pvd")  # Create output file for visualisation.
+for timestep in range(0, timesteps):
+    output_file_bad.write(*z.subfunctions, T)
+    stokes_solver_bad.solve()
+    energy_solver_bad.solve()
+    # averager.extrapolate_layer_average(Taverage, averager.get_layer_average(T))  # Calculate layer average
+
+    # Store velocity field and layer average temperature for subsequent use in the adjoint problem.
+    checkpoint_file_bad.save_function(u, name="Velocity", idx=timestep,
+                                  timestepping_info={"index": float(timestep), "delta_t": float(delta_t)})
+    checkpoint_file_bad.save_function(T, name="Temperature", idx=timestep,
+                                  timestepping_info={"index": float(timestep), "delta_t": float(delta_t)})
+
+# Save final temperature field to checkpoint file.
+# checkpoint_file_bad.save_function(T, name="Temperature", idx=timesteps - 1)
+checkpoint_file_bad.close()

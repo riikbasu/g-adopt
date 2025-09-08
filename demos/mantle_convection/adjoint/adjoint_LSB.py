@@ -161,7 +161,7 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # `timesteps - 10`.
 
 # initial_timestep = timesteps - 10
-initial_timestep = 0
+initial_timestep = timesteps - 2
 
 # Define the Control Space
 # ------------------------
@@ -181,15 +181,7 @@ Q1 = FunctionSpace(mesh, "CG", 1)
 # Note that this layer average will later be used for the smoothing term in our objective functional.
 with CheckpointFile(checkpoint_filename, mode="r") as checkpoint_file:
     Taverage = checkpoint_file.load_function(mesh, "Average_Temperature", idx=initial_timestep)
-# Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
-
- # Reassign Tic with the new state
-new_checkpoint_filename = 'adjoint-demo-checkpoint-state-bad.h5'
-new_checkpoint_file = CheckpointFile(new_checkpoint_filename, mode="r")
-new_temperature_timestepping_info = new_checkpoint_file.get_timestepping_history(mesh, "Temperature")
-Tic = new_checkpoint_file.load_function(mesh, "Temperature", idx=int(new_temperature_timestepping_info["index"][-1]))
-Tic.rename("Initial_Condition_Temperature")
-new_checkpoint_file.close()
+Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
 
 # Given that Tic will be updated during the optimisation, we also create a function to store our initial guess,
 # which we will later use for smoothing. Note that since smoothing is executed in the control space, we must
@@ -272,8 +264,8 @@ norm_u_surface = assemble(dot(uobs, uobs) * ds_t)
 t_misfit = assemble((T - Tobs) ** 2 * dx)
 
 # Weighting terms
-alpha_u = 1e-2
-alpha_d = 1e-4
+alpha_u = 1e-1
+alpha_d = 1e-3
 alpha_s = 1e-3
 
 # Define overall objective functional:
@@ -402,27 +394,19 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
-# ## Using Line search with Netwon-Krylov method
+# ## Using LSecantB-Algorithm
 
 # +
+import ROL
 import datetime
 import time
 
+bounds=(T_lb, T_ub)
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 10
-minimisation_parameters["General"]["Krylov"] = {
-    "Absolute Tolerance": 1e-4,
-    "Relative Tolerance": 1e-2,
-    "Iteration Limit": 10    
-}
-minimisation_parameters["Step"]["Line Search"] = {
-    "Line-Search Method": {"Type": "Iteration Scaling"},
-    "Descent Method": {"Type": "Newton-Krylov"},
-    # "User Defined Initial Step Size": True,
-    # "Initial Step Size": 0.2,
-    "Curvature Condition": {"Type": "Strong Wolfe Conditions"}
-}
-# minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
+minimisation_parameters["Status Test"]["Iteration Limit"] = 2
+# minimisation_parameters["Step"]["Line Search"] = {
+#   "Descent Method": {"Type": "Newton-Krylov"}
+# }
 # try:
 #     rol_secant = ROL.lBFGS(parameters["General"]["Secant"]["Maximum Storage"])
 # except KeyError:
@@ -430,9 +414,9 @@ minimisation_parameters["Step"]["Line Search"] = {
 #     rol_secant = ROL.lBFGS()
 rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_product="L2")
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
-rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
+rol_algorithm = ROL.LSecantBAlgorithm(rol_params)
 
-solutions_vtk = VTKFile("solutions_NK_tests_focussed2_verify.pvd")
+solutions_vtk = VTKFile("solutions_LSB.pvd")
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
 functional_values = []
@@ -539,8 +523,6 @@ class StatusTest(ROL.StatusTest):
         final_misfit = assemble(
             (T.block_variable.checkpoint - Tobs) ** 2 * dx
         )
-
-        
         record_misfit_values(initial_misfit, final_misfit)
         
         # Print output for ease of tracking simulation progress:
@@ -559,7 +541,7 @@ class StatusTest(ROL.StatusTest):
 
         # Write functional and misfit values to a file (appending to avoid overwriting)
         if MPI.COMM_WORLD.Get_rank() == 0:        
-            with open("functional_NK_tests_focussed2_verify.txt", "a") as f:
+            with open("functional_LSB.txt", "a") as f:
                 f.write(f"Iteration: {iteration} \n")
                 if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
                     f.write(f"No Hessians, functionals and gradients calculated \n")
@@ -582,118 +564,6 @@ class StatusTest(ROL.StatusTest):
         return super().check(status)
 
 rol_algorithm.setStatusTest(StatusTest(rol_params), False)
-rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective)
-# +
-# import pandas as pd
-# import numpy as np
-# import matplotlib.pyplot as plt
-# import csv
-# import matplotlib.colors as mcolors
-
-# it = 0   #iteration count
-# # Change/Add to these parameters------------------------------------------------------------------------------------------------------------------------
-
-# # filenames = ['functional.txt', 'functional_LM_opt.txt', 'functional_NK_bounded.txt', 'functional_CL.txt', 'functional_KS.txt', 'functional_TSPG.txt', 'functional_LS_SD.txt', 'functional_LS_QNM.txt', 'functional_NK.txt', 'functional_TR_CP.txt', 'functional_TR_TCG.txt', 'functional_TR_DL.txt', 'functional_TR_DDL.txt']
-# # labels = ['Lin-More (red)', 'Lin-More optimal(yellow)', 'Newton-Krylov bounded (green)', 'Coleman Li (purple)', 'Kelley Sachs (black)', 'Trust region SPG (olive)', 'Line search Steepest Descent (gray)', 'Line search Quasi-Newton method (magenta)', 'Line Search Newton-Krylov unbounded (blue)', 'Trust region Cauchy point (lime)', 'Trust region Truncated CG (gold)', 'Trust region Dogleg (royal blue)', 'Trust region Double Dogleg (orange)']
-# # colors = ['red', 'yellow', 'green', 'purple', 'black', 'olive', 'gray', 'magenta', 'blue', 'lime', 'gold', 'royalblue', 'orange']
-# # parameter_start = 34
-# # parameter_end = 41
-# # total_parameter_sets = parameter_end - parameter_start + 1
-# # filenames = []
-# # labels = []
-# # for i in range(parameter_start, parameter_start+total_parameter_sets):
-# #     # if i==5:
-# #     #     continue
-# #     # else:
-# #     filenames.append('functional_NK_tests_'+ str(i)+'.txt')
-# #     labels.append('NK_Tests-Set ' + str(i))
-
-# # abs_tol = [1e-1, 1e-2, 1e-3, 1e-5, 1e-6, 1e-7]
-# # rel_tol = [1e-1, 1e-3, 1e-5, 1e-7, 1e-9]
-# # const_abs_tol = 1e-4
-# # const_rel_tol = 1e-2
-
-# # for i in range(len(rel_tol)):
-# #     labels.append('abs_tol = 1e-4' + ', rel_tol = ' + str(rel_tol[i]))
-
-# # filenames.append('functional_NK_tests_1.txt')
-# # labels.append('NK_Tests-Set 1')
-# # total_parameter_sets = total_parameter_sets+1
-# total_parameter_sets = 3
-# filenames = ['functional_NK_tests_1.txt', 'functional_NK_focussed_tests.txt', 'functional_NK_focussed_tests_30.txt']
-# labels = ['default', 'small_step_test', 'small_step_test_30_iterations']
-# plot_type = 'Functional values'  # Define one of ['Functional values', 'Initial Misfit', 'Final Misfit']
-
-# plt.figure(figsize=(8,5), dpi=800)
-# for name in filenames:
-#     # We open the source file and get its lines
-#     in_filename = name
-#     with open(in_filename, 'r') as inp:
-#         lines = inp.readlines()
-
-#     total_hessians = []
-#     total_hessians.append(0)
-#     hessian_time_avg = []
-#     hessian_time_avg.append(0)
-#     total_func = []
-#     total_func.append(0)
-#     func_time_avg = []
-#     func_time_avg.append(0)
-#     total_grad = []
-#     total_grad.append(0)
-#     grad_time_avg = []
-#     grad_time_avg.append(0)
-#     func_values = []
-#     initial_misfits = []
-#     final_misfits = []
-#     func_values.append(float(lines[2].split()[2].replace(",", "")))
-#     initial_misfits.append(float(lines[2].split()[5].replace(",", "")))
-#     final_misfits.append(float(lines[2].split()[8].replace(",", "")))
-    
-#     iteration_count = 1
-#     if 3*iteration_count+1 < len(lines):
-#         while 3*iteration_count+1 < len(lines):
-#             total_hessians.append(int(lines[3*iteration_count+1].split()[2].replace(",", "")))
-#             hessian_time_avg.append(float(lines[3*iteration_count+1].split()[6].replace(";", "")))
-#             total_func.append(int(lines[3*iteration_count+1].split()[9].replace(",", "")))
-#             func_time_avg.append(float(lines[3*iteration_count+1].split()[13].replace(";", "")))
-#             total_grad.append(int(lines[3*iteration_count+1].split()[16].replace(",", "")))
-#             grad_time_avg.append(float(lines[3*iteration_count+1].split()[20]))
-#             func_values.append(float(lines[3*iteration_count+2].split()[2].replace(",", "")))
-#             initial_misfits.append(float(lines[3*iteration_count+2].split()[5].replace(",", "")))
-#             final_misfits.append(float(lines[3*iteration_count+2].split()[8].replace(",", "")))
-#             iteration_count = iteration_count + 1
-#         func_values[0] = func_values[1]
-        
-#     else:
-#         print("Currently the inversion has not progressed to the first iteration.")
-#     # weighted_x_axis = np.array([x * y for x, y in zip(total_hessians, hessian_time_avg)]) + np.array([x * y for x, y in zip(total_func, func_time_avg)]) + np.array([x * y for x, y in zip(total_grad, grad_time_avg)])
-#     weighted_x_axis = np.array([i * 1 for i in total_func]) + np.array([i * 1 for i in total_grad]) + np.array([i * 3 for i in total_hessians])
-#     total_colors = len(list(mcolors.XKCD_COLORS))
-#     chosen_color = list(mcolors.XKCD_COLORS)[int(it*total_colors/total_parameter_sets)+5]
-#     if plot_type == 'Functional values':
-#         # plt.plot(weighted_x_axis, func_values, color=chosen_color, label=labels[it]+ ' ' + chosen_color[5:-1])
-#         plt.plot(weighted_x_axis, func_values, color=chosen_color, label=labels[it])
-#     elif plot_type == 'Initial Misfit':
-#         # plt.plot(weighted_x_axis, initial_misfits, color=chosen_color, label=labels[it]+ ' ' + chosen_color[5:-1])
-#         plt.plot(weighted_x_axis, initial_misfits, color=chosen_color, label=labels[it])
-#     elif plot_type == 'Final Misfit':
-#         # plt.plot(weighted_x_axis, final_misfits, color=chosen_color, label=labels[it]+ ' ' + chosen_color[5:-1])
-#         plt.plot(weighted_x_axis, final_misfits, color=chosen_color, label=labels[it])
-#     it = it+1
-
-# # maxii = max(maxi)
-# plt.xlabel("# Weighted cost (fval + grad + 3 x hess)")
-# plt.ylabel(plot_type)
-# plt.yscale("log")
-# # plt.xticks(range(0,100))
-# # plt.xlim(0, 300)
-# plt.legend(loc=4, prop={'size': 7})
-# plt.title('Optimisation convergence comparison')
-# plt.tight_layout()
-# # plt.savefig("NK_rel_tol_final_misfit.png", dpi=800)
-
-
+rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective, rol_solver.bounds)
 # -
-
 

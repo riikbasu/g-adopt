@@ -160,8 +160,8 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-initial_timestep = timesteps - 3
-# initial_timestep = 0
+# initial_timestep = timesteps - 3
+initial_timestep = 0
 
 # Define the Control Space
 # ------------------------
@@ -401,15 +401,12 @@ import datetime
 import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 3
-minimisation_parameters["Step"]["Trust Region"] = {
-    "Subproblem Solver": {"Type": "Dogleg"}
-}
+minimisation_parameters["Status Test"]["Iteration Limit"] = 20
 minimisation_parameters["General"]["Secant"] = {
     "Use as Preconditioner": True
 }
 minimisation_parameters["Step"]["Trust Region"] = {
-    "Subproblem Solver": {"Type": "Cauchy Point"},
+    "Subproblem Solver": "Dogleg",
     "Radius Shrinking Threshold": 0.15,
     "Radius Growing Threshold": 0.65,
     "Radius Shrinking Rate (Negative rho)": 0.03125,

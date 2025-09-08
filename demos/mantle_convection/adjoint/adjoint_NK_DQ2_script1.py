@@ -401,20 +401,20 @@ import datetime
 import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 5
+minimisation_parameters["Status Test"]["Iteration Limit"] = 20
 minimisation_parameters["General"]["Krylov"] = {
     "Absolute Tolerance": 1e-1,
     "Relative Tolerance": 1e-1,
-    "Iteration Limit": 10    
+    "Iteration Limit": 4,    
 }
 minimisation_parameters["Step"]["Line Search"] = {
     "Line-Search Method": {"Type": 'Cubic Interpolation'},
     "Descent Method": {"Type": "Newton-Krylov"},
     "Curvature Condition": {"Type": 'Strong Wolfe Conditions'}
 }
-minimisation_parameters["General"]["Secant"] = {
-    "Use as Preconditioner": True
-}
+# minimisation_parameters["General"]["Secant"] = {
+#     "Use as Preconditioner": True
+# }
 # minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
 # try:
 #     rol_secant = ROL.lBFGS(parameters["General"]["Secant"]["Maximum Storage"])
@@ -425,7 +425,7 @@ rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_prod
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
 rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
 
-solutions_vtk = VTKFile("solutions_NK_DQ2_script1.pvd")
+solutions_vtk = VTKFile("solutions_NK_DQ2_script1_iteration4.pvd")
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
 functional_values = []
@@ -553,7 +553,7 @@ class StatusTest(ROL.StatusTest):
 
         # Write functional and misfit values to a file (appending to avoid overwriting)
         if MPI.COMM_WORLD.Get_rank() == 0:        
-            with open("functional_NK_DQ2_script1.txt", "a") as f:
+            with open("functional_NK_DQ2_script1_iteration4.txt", "a") as f:
                 f.write(f"Iteration: {iteration} \n")
                 if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
                     f.write(f"No Hessians, functionals and gradients calculated \n")
@@ -573,7 +573,7 @@ class StatusTest(ROL.StatusTest):
         solution_final.assign(T.block_variable.checkpoint)        
         solutions_vtk.write(solution_IC, solution_final)
         # Write checkpoint
-        with CheckpointFile("Final_State.h5", "w") as final_checkpoint:
+        with CheckpointFile("Final_State_iteration4.h5", "w") as final_checkpoint:
             final_checkpoint.save_mesh(mesh)
             final_checkpoint.save_function(solution_IC, name="Initial Temperature", idx=iteration,
                                   timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
@@ -586,4 +586,3 @@ class StatusTest(ROL.StatusTest):
 
 rol_algorithm.setStatusTest(StatusTest(rol_params), False)
 rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective)
-# -

@@ -413,16 +413,24 @@ minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative
 minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
 minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
 minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
+minimisation_parameters["General"]["Krylov"] = {
+    "Absolute Tolerance": 1e-1,
+    "Relative Tolerance": 1e-1,
+    "Iteration Limit": 3,
+}
+del minimisation_parameters["General"]["Secant"]
 
 # A notable feature of this optimisation approach in ROL is its checkpointing capability. For every iteration,
 # all information necessary to restart the optimisation from that iteration is saved in the specified `checkpoint_dir`.
 
-# Define the LinMore Optimiser class with checkpointing capability:
-optimiser = LinMoreOptimiser(
-    minimisation_problem,
-    minimisation_parameters,
-    checkpoint_dir="optimisation_checkpoint",
-)
+# +
+# # Define the LinMore Optimiser class with checkpointing capability:
+# optimiser = LinMoreOptimiser(
+#     minimisation_problem,
+#     minimisation_parameters,
+#     checkpoint_dir="optimisation_checkpoint",
+# )
+# -
 
 # For sake of book-keeping the simulation, we have also implemented a user-defined way of
 # recording information that might be used to check the optimisation performance. This
@@ -435,10 +443,173 @@ optimiser = LinMoreOptimiser(
 # functional directly in order to produce a plot of the convergence.
 
 # +
+# import datetime
+# import time
+
+# solutions_vtk = VTKFile("solutions_LM_opt.pvd")
+# functional_values = []
+# solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
+# solution_final = Function(T.function_space(), name="Final_Temperature")    
+# functional_values = []
+# initial_misfit_values = []
+# final_misfit_values = []
+# counter_hess = 0
+# counter_func = 0
+# counter_grad = 0
+# start_time_hess = 0
+# start_time_func = 0
+# start_time_grad = 0
+# elapsed_time_hess = 0
+# elapsed_time_func = 0
+# elapsed_time_grad = 0
+# iteration = 0
+
+# # Profiling
+# # Profiling
+# def record_pre_hess(*args):
+#     global counter_hess
+#     global start_time_hess
+#     counter_hess = counter_hess + 1
+#     start_time_hess = datetime.datetime.now()
+#     start_time_hess_disp = start_time_hess.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     log(f"Hessian calculation started with count: {counter_hess} at time: {start_time_hess_disp}")
+
+# def record_post_hess(*args):
+#     global counter_hess
+#     global start_time_hess
+#     global elapsed_time_hess
+#     end_time_hess = datetime.datetime.now()
+#     elapsed_time = end_time_hess-start_time_hess
+#     elapsed_time_hess = elapsed_time_hess + elapsed_time.total_seconds()
+#     end_time_hess_disp = end_time_hess.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     total_seconds = int(elapsed_time.total_seconds())
+#     hours = total_seconds // 3600
+#     minutes = (total_seconds % 3600) // 60
+#     seconds = total_seconds % 60
+#     log(f"Hessian calculation finished with count: {counter_hess} at time: {end_time_hess_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
+
+# def record_pre_func(*args):
+#     global counter_func
+#     global start_time_func
+#     counter_func = counter_func + 1
+#     start_time_func = datetime.datetime.now()
+#     start_time_func_disp = start_time_func.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     log(f"Functional calculation started with count: {counter_func} at time: {start_time_func_disp}")
+
+# def record_post_func(func_value, *args):
+#     global start_time_func
+#     global elapsed_time_func
+#     end_time_func = datetime.datetime.now()
+#     elapsed_time = end_time_func-start_time_func
+#     elapsed_time_func = elapsed_time_func + elapsed_time.total_seconds()
+#     end_time_func_disp = end_time_func.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     total_seconds = int(elapsed_time.total_seconds())
+#     hours = total_seconds // 3600
+#     minutes = (total_seconds % 3600) // 60
+#     seconds = total_seconds % 60
+#     log(f"Functional calculation finished with count: {counter_func} at time: {end_time_func_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
+#     functional_values.append(func_value)
+
+# def record_pre_grad(controls, *args):
+#     global start_time_grad
+#     global counter_grad
+#     counter_grad = counter_grad + 1
+#     start_time_grad = datetime.datetime.now()
+#     start_time_grad_disp = start_time_grad.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     log(f"Gradient calculation started with count: {counter_grad} at time: {start_time_grad_disp}")
+#     return controls
+
+# def record_post_grad(checkpoint, derivatives, values, *args):
+#     global start_time_grad
+#     global elapsed_time_grad
+#     end_time_grad = datetime.datetime.now()
+#     elapsed_time = end_time_grad-start_time_grad
+#     elapsed_time_grad = elapsed_time_grad + elapsed_time.total_seconds()
+#     end_time_grad_disp = end_time_grad.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     total_seconds = int(elapsed_time.total_seconds())
+#     hours = total_seconds // 3600
+#     minutes = (total_seconds % 3600) // 60
+#     seconds = total_seconds % 60
+#     log(f"Gradient calculation finished with count: {counter_grad} at time: {end_time_grad_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
+#     return derivatives
+
+# # Log values of initial and final misfit:
+# def record_misfit_values(init_misfit, final_misfit):
+#     initial_misfit_values.append(init_misfit)
+#     final_misfit_values.append(final_misfit)
+
+
+# def callback():
+#     global iteration
+#     initial_misfit = assemble(
+#         (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
+#     )
+#     final_misfit = assemble(
+#         (T.block_variable.checkpoint - Tobs) ** 2 * dx
+#     )
+
+#     reduced_functional.eval_cb_pre = record_pre_func
+#     reduced_functional.eval_cb_post = record_post_func
+#     reduced_functional.derivative_cb_pre = record_pre_grad
+#     reduced_functional.derivative_cb_post = record_post_grad
+#     reduced_functional.hessian_cb_pre = record_pre_hess
+#     reduced_functional.hessian_cb_post = record_post_hess
+#     record_misfit_values(initial_misfit, final_misfit)
+    
+#     # Print output for ease of tracking simulation progress:
+#     if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
+#         log(f"No Hessians, functionals and gradients calculated \n")
+#     elif counter_hess == 0 and counter_grad == 0:
+#         log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0 ; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
+#     elif counter_hess == 0:
+#         log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
+#     else:
+#         log(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")  
+#     if functional_values:
+#         log(f"Functional: {functional_values[-1]};  Misfit (IC): {initial_misfit};  Misfit (Final): {final_misfit}")
+#     else:
+#         log(f"Functional value not recorded; Misfit (IC): {initial_misfit}; Misfit (Final): {final_misfit}")
+
+#     # Write functional and misfit values to a file (appending to avoid overwriting)
+#     if MPI.COMM_WORLD.Get_rank() == 0:        
+#         with open("functional_LM_opt.txt", "a") as f:
+#             f.write(f"Iteration: {iteration} \n")
+#             if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
+#                 f.write(f"No Hessians, functionals and gradients calculated \n")
+#             elif counter_hess == 0 and counter_grad == 0:
+#                 f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
+#             elif counter_hess == 0:
+#                 f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
+#             else:
+#                 f.write(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
+#             if functional_values:            
+#                 f.write(f"Functional value: {functional_values[-1]}, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
+#             else:
+#                 f.write(f"Functional value: 0.0, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
+
+#     # Write VTK output:
+#     solution_IC.assign(Tic.block_variable.checkpoint)
+#     solution_final.assign(T.block_variable.checkpoint)        
+#     solutions_vtk.write(solution_IC, solution_final)
+#     iteration = iteration + 1
+
+# optimiser.add_callback(callback)
+
+# # If it existed, we could restore the optimisation from last checkpoint:
+# # optimiser.restore()
+
+# # Run the optimisation
+# optimiser.run()
+
+# +
 import datetime
 import time
 
-solutions_vtk = VTKFile("solutions_LM_opt.pvd")
+rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_product="L2")
+rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
+rol_algorithm = ROL.LinMoreAlgorithm(rol_params)
+
+solutions_vtk = VTKFile("solutions_LM_opt_HVP.pvd")
 functional_values = []
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
@@ -526,72 +697,68 @@ def record_post_grad(checkpoint, derivatives, values, *args):
     return derivatives
 
 # Log values of initial and final misfit:
-def record_misfit_values(init_misfit, final_misfit):
-    initial_misfit_values.append(init_misfit)
-    final_misfit_values.append(final_misfit)
+# def record_misfit_values(init_misfit, final_misfit):
+#     initial_misfit_values.append(init_misfit)
+#     final_misfit_values.append(final_misfit)
 
+reduced_functional.eval_cb_pre = record_pre_func
+reduced_functional.eval_cb_post = record_post_func
+reduced_functional.derivative_cb_pre = record_pre_grad
+reduced_functional.derivative_cb_post = record_post_grad
+reduced_functional.hessian_cb_pre = record_pre_hess
+reduced_functional.hessian_cb_post = record_post_hess
+# record_misfit_values(initial_misfit, final_misfit)
 
-def callback():
-    global iteration
-    initial_misfit = assemble(
-        (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
-    )
-    final_misfit = assemble(
-        (T.block_variable.checkpoint - Tobs) ** 2 * dx
-    )
-
-    reduced_functional.eval_cb_pre = record_pre_func
-    reduced_functional.eval_cb_post = record_post_func
-    reduced_functional.derivative_cb_pre = record_pre_grad
-    reduced_functional.derivative_cb_post = record_post_grad
-    reduced_functional.hessian_cb_pre = record_pre_hess
-    reduced_functional.hessian_cb_post = record_post_hess
-    record_misfit_values(initial_misfit, final_misfit)
+class StatusTest(ROL.StatusTest):
+    def check(self, status):
+        global iteration
+        initial_misfit = assemble(
+            (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
+        )
+        final_misfit = assemble(
+            (T.block_variable.checkpoint - Tobs) ** 2 * dx
+        )
+        
+        # Print output for ease of tracking simulation progress:
+        if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
+            log(f"No Hessians, functionals and gradients calculated \n")
+        elif counter_hess == 0 and counter_grad == 0:
+            log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0 ; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
+        elif counter_hess == 0:
+            log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
+        else:
+            log(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")  
+        if functional_values:
+            log(f"Functional: {functional_values[-1]};  Misfit (IC): {initial_misfit};  Misfit (Final): {final_misfit}")
+        else:
+            log(f"Functional value not recorded; Misfit (IC): {initial_misfit}; Misfit (Final): {final_misfit}")
     
-    # Print output for ease of tracking simulation progress:
-    if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-        log(f"No Hessians, functionals and gradients calculated \n")
-    elif counter_hess == 0 and counter_grad == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0 ; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-    elif counter_hess == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-    else:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")  
-    if functional_values:
-        log(f"Functional: {functional_values[-1]};  Misfit (IC): {initial_misfit};  Misfit (Final): {final_misfit}")
-    else:
-        log(f"Functional value not recorded; Misfit (IC): {initial_misfit}; Misfit (Final): {final_misfit}")
+        # Write functional and misfit values to a file (appending to avoid overwriting)
+        if MPI.COMM_WORLD.Get_rank() == 0:        
+            with open("functional_LM_opt_HVP.txt", "a") as f:
+                f.write(f"Iteration: {iteration} \n")
+                if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
+                    f.write(f"No Hessians, functionals and gradients calculated \n")
+                elif counter_hess == 0 and counter_grad == 0:
+                    f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
+                elif counter_hess == 0:
+                    f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
+                else:
+                    f.write(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
+                if functional_values:            
+                    f.write(f"Functional value: {functional_values[-1]}, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
+                else:
+                    f.write(f"Functional value: 0.0, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
+    
+        # Write VTK output:
+        solution_IC.assign(Tic.block_variable.checkpoint)
+        solution_final.assign(T.block_variable.checkpoint)        
+        solutions_vtk.write(solution_IC, solution_final)
+        iteration = iteration + 1
+        return super().check(status)
 
-    # Write functional and misfit values to a file (appending to avoid overwriting)
-    if MPI.COMM_WORLD.Get_rank() == 0:        
-        with open("functional_LM_opt.txt", "a") as f:
-            f.write(f"Iteration: {iteration} \n")
-            if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-                f.write(f"No Hessians, functionals and gradients calculated \n")
-            elif counter_hess == 0 and counter_grad == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-            elif counter_hess == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            else:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            if functional_values:            
-                f.write(f"Functional value: {functional_values[-1]}, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
-            else:
-                f.write(f"Functional value: 0.0, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
-
-    # Write VTK output:
-    solution_IC.assign(Tic.block_variable.checkpoint)
-    solution_final.assign(T.block_variable.checkpoint)        
-    solutions_vtk.write(solution_IC, solution_final)
-    iteration = iteration + 1
-
-optimiser.add_callback(callback)
-
-# If it existed, we could restore the optimisation from last checkpoint:
-# optimiser.restore()
-
-# Run the optimisation
-optimiser.run()
+rol_algorithm.setStatusTest(StatusTest(rol_params), False)
+rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective, rol_solver.bounds)
 # -
 
 # At this point a total number of 5 iterations are performed. For the example
