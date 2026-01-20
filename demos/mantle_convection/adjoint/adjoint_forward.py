@@ -1,10 +1,10 @@
 # Generating reference fields for adjoint inversion
 # =================================================
 #
-# This tutorial explains how to run the forward portion of the adjoint test case to generate the reference final
+# This tutorial explains how to run the forward portion of the [adjoint test case](../adjoint) to generate the reference final
 # condition and synthetic forcing (surface velocity observations).
 #
-# We will follow a similar structure to the base demo, focusing on generating the necessary fields for the adjoint
+# We will follow a similar structure to the [base demo](../base_case), focusing on generating the necessary fields for the adjoint
 # inversion. Let's get started.
 
 # Setting Up the Domain
@@ -12,6 +12,7 @@
 # First, we define the domain extents and discretisation.
 
 from gadopt import *
+import numpy as np
 x_max = 1.0
 y_max = 1.0
 disc_n = 150
@@ -135,10 +136,9 @@ energy_solver = EnergySolver(
 
 stokes_solver = StokesSolver(
     z,
-    T,
     approximation,
+    T,
     bcs=stokes_bcs,
-    constant_jacobian=True,
     nullspace=Z_nullspace,
     transpose_nullspace=Z_nullspace,
 )

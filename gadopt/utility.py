@@ -7,8 +7,7 @@ depending on what they would like to achieve.
 from firedrake import outer, ds_v, ds_t, ds_b, CellDiameter, CellVolume, dot, JacobianInverse
 from firedrake import sqrt, Function, FiniteElement, TensorProductElement, FunctionSpace, VectorFunctionSpace
 from firedrake import as_vector, SpatialCoordinate, Constant, max_value, min_value, dx, assemble, tanh
-from firedrake import op2, VectorElement, DirichletBC, utils
-from firedrake.__future__ import Interpolator
+from firedrake import op2, VectorElement, DirichletBC, utils, interpolate, conditional
 from firedrake.ufl_expr import extract_unique_domain
 import ufl
 import time
@@ -21,6 +20,11 @@ from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL  # NOQA
 import os
 from scipy.linalg import solveh_banded
 from types import SimpleNamespace
+
+try:
+    from firedrake import MeshSequenceGeometry
+except ImportError:
+    MeshSequenceGeometry = None
 
 # TBD: do we want our own set_log_level and use logging module with handlers?
 log_level = logging.getLevelName(os.environ.get("GADOPT_LOGLEVEL", "INFO").upper())
@@ -71,7 +75,7 @@ class TimestepAdaptor:
         # J^-1 u is a discontinuous expression, using op2.MAX it takes the maximum value
         # in all adjacent elements when interpolating it to a continuous function space
         # We do need to ensure we reset ref_vel to zero, as it also takes the max with any previous values
-        self.ref_vel_interpolator = Interpolator(abs(dot(JacobianInverse(self.mesh), self.u)), V, access=op2.MAX)
+        self.ref_vel_interpolate = interpolate(abs(dot(JacobianInverse(self.mesh), self.u)), V, access=op2.MAX)
 
     def compute_timestep(self):
         max_ts = float(self.dt_const)*self.increase_tolerance
@@ -79,7 +83,7 @@ class TimestepAdaptor:
             max_ts = min(max_ts, self.maximum_timestep)
 
         # need to reset ref_vel to avoid taking max with previous values
-        ref_vel = assemble(self.ref_vel_interpolator.interpolate())
+        ref_vel = assemble(self.ref_vel_interpolate)
         local_maxrefvel = ref_vel.dat.data.max()
         max_refvel = self.mesh.comm.allreduce(local_maxrefvel, MPI.MAX)
         # NOTE; we're incorparating max_ts here before dividing by max. ref. vel. as it may be zero
@@ -92,9 +96,16 @@ class TimestepAdaptor:
         return float(self.dt_const)
 
 
+def is_cartesian(mesh):
+    if MeshSequenceGeometry is not None and isinstance(mesh, MeshSequenceGeometry):
+        return mesh.unique().cartesian
+    else:
+        return mesh.cartesian
+
+
 def upward_normal(mesh):
-    if mesh.cartesian:
-        n = mesh.geometric_dimension()
+    if is_cartesian(mesh):
+        n = mesh.geometric_dimension
         return as_vector([0]*(n-1) + [1])
     else:
         X = SpatialCoordinate(mesh)
@@ -105,7 +116,7 @@ def upward_normal(mesh):
 def vertical_component(u):
     mesh = extract_unique_domain(u)
 
-    if mesh.cartesian:
+    if is_cartesian(mesh):
         return u[u.ufl_shape[0]-1]
     else:
         n = upward_normal(mesh)
@@ -186,7 +197,7 @@ def normal_is_continuous(expr):
 
 def cell_size(mesh):
     if hasattr(mesh.ufl_cell(), 'sub_cells'):
-        return CellVolume(mesh) ** (1/mesh.topological_dimension())
+        return CellVolume(mesh) ** (1/mesh.topological_dimension)
     else:
         return CellDiameter(mesh)
 
@@ -212,7 +223,7 @@ def extend_function_to_3d(func, mesh_extruded):
     function.
     """
     fs = func.function_space()
-#    assert fs.mesh().geometric_dimension() == 2, 'Function must be in 2D space'
+#    assert fs.mesh().geometric_dimension == 2, 'Function must be in 2D space'
     ufl_elem = fs.ufl_element()
     family = ufl_elem.family()
     degree = ufl_elem.degree()
@@ -274,7 +285,7 @@ def get_functionspace(mesh, h_family, h_degree, v_family=None, v_degree=None,
             v_family = h_family
         if v_degree is None:
             v_degree = h_degree
-        h_cell, v_cell = mesh.ufl_cell().sub_cells()
+        h_cell, v_cell = mesh.ufl_cell().sub_cells
         h_elt = FiniteElement(h_family, h_cell, h_degree, variant=variant)
         v_elt = FiniteElement(v_family, v_cell, v_degree, variant=v_variant)
         elt = TensorProductElement(h_elt, v_elt)
@@ -303,7 +314,7 @@ class LayerAveraging:
         self.mesh = mesh
         XYZ = SpatialCoordinate(mesh)
 
-        if mesh.cartesian:
+        if is_cartesian(mesh):
             self.r = XYZ[len(XYZ)-1]
         else:
             self.r = sqrt(dot(XYZ, XYZ))
@@ -507,13 +518,30 @@ def interpolate_1d_profile(function: Function, one_d_filename: str):
     averager.extrapolate_layer_average(function, interpolated_visc)
 
 
-def get_boundary_ids(mesh) -> SimpleNamespace:
+class BoundaryIDNamespace(SimpleNamespace):
+    def keys(self):
+        return self.__dict__.keys()
+
+    def items(self):
+        return self.__dict__.items()
+
+    def values(self):
+        return self.__dict__.values()
+
+    def __contains__(self, item):
+        return item in self.values()
+
+    def __iter__(self):
+        return self.values().__iter__()
+
+
+def get_boundary_ids(mesh) -> BoundaryIDNamespace:
     # PETSc creates these labels when loading meshes from files, Firedrake imitates it
     # in its own mesh creation functions.
 
     if mesh.topology_dm.hasLabel("Face Sets"):
         axis_extremes_order = [["left", "right"], ["bottom", "top"]]
-        dim = mesh.geometric_dimension()
+        dim = mesh.geometric_dimension
         plex_dim = mesh.topology_dm.getCoordinateDim()  # In an extruded mesh, this is different to the
         # firedrake-assigned geometric_dimension
         if dim == 3:
@@ -576,4 +604,63 @@ def get_boundary_ids(mesh) -> SimpleNamespace:
     # utilised by 'CombinedSurfaceMeasure' above
     else:
         kwargs = {"bottom": "bottom", "top": "top"}
-    return SimpleNamespace(**kwargs)
+    return BoundaryIDNamespace(**kwargs)
+
+
+def extruded_layer_heights(
+        DG0_layers: int | list[int], radii: list[float]) -> list[float]:
+
+    """Calculates layer heights for extruded mesh using rheological boundary
+
+    Args:
+      DG0_layers:
+        Number of layers per rheological layer
+      radii:
+        Radii of rheological boundaries to match when extruding the mesh.
+        Assumes sequence starts with outer radii -> inner radii.
+
+    Returns:
+        list of layer heights
+        """
+
+    layer_heights = []
+
+    nz_layers = [DG0_layers] * len(radii) if isinstance(DG0_layers, int) else DG0_layers
+    assert len(nz_layers) == len(radii)
+
+    # starting at the bottom radius, work outwards
+    for i in range(len(radii) - 2, -1, -1):
+        dz = (radii[i] - radii[i + 1]) / nz_layers[i]
+        for _ in range(nz_layers[i]):
+            layer_heights.append(dz)
+    return layer_heights
+
+
+def initialise_background_field(
+        f: Function,
+        background_values: list[float],
+        X: ufl.geometry.SpatialCoordinate,
+        radii: list[float],
+        shift: float = 0.0,):
+    """Initialises discontinuous field with sharp jumps at rheological boundaries
+
+    Args:
+      f:
+        Function to interpolate background values into. N.b. `f` is modified in place.
+      background_values:
+        Discrete values to interpolate into `f`
+      X:
+        Spatial coordinates associated with function `f`
+      radii:
+        Radii of rheological discontinuities. N.b. length of `background_values` must be one less
+        than length of `radii`.
+      shift:
+        Shift vertical radii by a constant, e.g. when mesh is offset from `radii` values.
+    """
+
+    assert len(background_values) == len(radii)-1
+    for i in range(len(background_values)):
+        f.interpolate(
+            conditional(vertical_component(X) + shift > radii[i+1],
+                        conditional(vertical_component(X) + shift <= radii[i],
+                                    background_values[i], f), f))

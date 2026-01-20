@@ -3,6 +3,7 @@ r"""This module contains classes that augment default Firedrake preconditioners.
 """
 
 import firedrake as fd
+from ufl.indexed import Indexed
 from firedrake.petsc import PETSc
 from .utility import InteriorBC
 
@@ -13,8 +14,8 @@ class FreeSurfaceMassInvPC(fd.MassInvPC):
     def form(
         self,
         pc: fd.PETSc.PC,
-        tests: list[fd.Argument | fd.ufl.indexed.Indexed],
-        trials: list[fd.Argument | fd.ufl.indexed.Indexed | fd.Function],
+        tests: list[fd.Argument | Indexed],
+        trials: list[fd.Argument | Indexed | fd.Function],
     ) -> tuple[fd.Form, list[fd.DirichletBC]]:
         """Sets the form.
 
@@ -34,7 +35,7 @@ class FreeSurfaceMassInvPC(fd.MassInvPC):
 
         ds = appctx["ds"]
         bcs = []
-        for bc_id, eta_ind in appctx["free_surface"].items():
+        for bc_id, (eta_ind, _) in appctx["free_surface"].items():
             a += 1 / mu * fd.inner(trials[eta_ind - 1], tests[eta_ind - 1]) * ds(bc_id)
 
             bcs.append(InteriorBC(trials.function_space()[eta_ind - 1], 0, bc_id))
