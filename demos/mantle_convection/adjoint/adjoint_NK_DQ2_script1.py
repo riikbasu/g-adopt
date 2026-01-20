@@ -30,7 +30,7 @@
 from gadopt import *
 from gadopt.inverse import *
 # Open the checkpoint file and subsequently load the mesh:
-checkpoint_filename = "adjoint-demo-checkpoint-state.h5"
+checkpoint_filename = "adjoint-demo-checkpoint-state-highres.h5"
 checkpoint_file = CheckpointFile(checkpoint_filename, mode="r")
 mesh = checkpoint_file.load_mesh("firedrake_default_extruded")
 mesh.cartesian = True
@@ -405,7 +405,7 @@ minimisation_parameters["Status Test"]["Iteration Limit"] = 20
 minimisation_parameters["General"]["Krylov"] = {
     "Absolute Tolerance": 1e-1,
     "Relative Tolerance": 1e-1,
-    "Iteration Limit": 4,    
+    "Iteration Limit": 10,    
 }
 minimisation_parameters["Step"]["Line Search"] = {
     "Line-Search Method": {"Type": 'Cubic Interpolation'},
@@ -425,7 +425,7 @@ rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_prod
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
 rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
 
-solutions_vtk = VTKFile("solutions_NK_DQ2_script1_iteration4.pvd")
+solutions_vtk = VTKFile("solutions_NK_DQ2_script1_highres.pvd")
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
 functional_values = []
@@ -553,7 +553,7 @@ class StatusTest(ROL.StatusTest):
 
         # Write functional and misfit values to a file (appending to avoid overwriting)
         if MPI.COMM_WORLD.Get_rank() == 0:        
-            with open("functional_NK_DQ2_script1_iteration4.txt", "a") as f:
+            with open("functional_NK_DQ2_script1_highres.txt", "a") as f:
                 f.write(f"Iteration: {iteration} \n")
                 if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
                     f.write(f"No Hessians, functionals and gradients calculated \n")
@@ -573,7 +573,7 @@ class StatusTest(ROL.StatusTest):
         solution_final.assign(T.block_variable.checkpoint)        
         solutions_vtk.write(solution_IC, solution_final)
         # Write checkpoint
-        with CheckpointFile("Final_State_iteration4.h5", "w") as final_checkpoint:
+        with CheckpointFile("Final_State_highres.h5", "w") as final_checkpoint:
             final_checkpoint.save_mesh(mesh)
             final_checkpoint.save_function(solution_IC, name="Initial Temperature", idx=iteration,
                                   timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
