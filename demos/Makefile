@@ -4,12 +4,13 @@ include makefile.cases.inc
 
 all: $(mc_cases) $(mm_cases) $(gia_cases) $(extra_cases)
 
-convert_demos: $(notebook_files) .pages .diagram.mermaid
-	tar --transform='s/.pages/CONTENTS.md/' --create --file artifact.tar .pages .diagram.mermaid
+convert_demos: $(notebook_files) .pages $(diagram_files)
+	tar --transform='s/.pages/CONTENTS.md/' --create --file artifact.tar .pages $(diagram_files)
 	tar --transform='s|/.*/|/|' --append --file artifact.tar $(notebook_files)
 	tar --append --file artifact.tar $(mc_dir)/free_surface/temperature_warp.gif
 	tar --append --file artifact.tar $(gia_dir)/base_case/displacement_warp.gif
 	tar --append --file artifact.tar $(gia_dir)/2d_cylindrical/displacement_warp.gif
+	tar --append --file artifact.tar $(gia_dir)/2d_cylindrical_lvv/displacement_warp.gif
 
 # explicit dependencies between notebooks
 # adjoint uses the checkpoint from the forward run
@@ -20,6 +21,18 @@ $(mc_dir)/free_surface/free_surface.ipynb: $(mc_dir)/base_case/base_case.ipynb
 
 # dynamic topography requires the checkpoint from the base case
 $(mc_dir)/dynamic_topography/dynamic_topography.ipynb: $(mc_dir)/base_case/base_case.ipynb
+
+# smoothing requires the checkpoint file to be generated
+smoothing/smoothing.ipynb: smoothing/smoothing-example.h5
+
+smoothing/smoothing-example.h5:
+	$(MAKE) -C smoothing smoothing-example.h5
+
+# adjoint ice requires the checkpoint file to be generated
+$(gia_dir)/adjoint_ice/adjoint_ice.ipynb: $(gia_dir)/adjoint_ice/forward-2d-cylindrical-disp-vel.h5
+
+$(gia_dir)/adjoint_ice/forward-2d-cylindrical-disp-vel.h5:
+	$(MAKE) -C $(gia_dir)/adjoint_ice forward-2d-cylindrical-disp-vel.h5
 
 ### make mantle_convection/base_case should just run the mantle_convection/base_case demo
 ### make mantle_convection should run all mantle convection demos
