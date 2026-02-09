@@ -202,17 +202,19 @@ gd = GeodynamicalDiagnostics(z, FullT, boundary.bottom, boundary.top, quad_degre
 
 energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs)
 
+solver_params_extra = {"fieldsplit_0": {"ksp_converged_reason": None}, "fieldsplit_1": {"ksp_converged_reason": None}}
+
 stokes_solver = StokesSolver(
     z,
-    T,
     approximation,
+    T,
     bcs=stokes_bcs,
+    solver_parameters="iterative",
     nullspace=Z_nullspace,
     transpose_nullspace=Z_nullspace,
     near_nullspace=Z_near_nullspace,
+    solver_parameters_extra=solver_params_extra,
 )
-stokes_solver.solver_parameters["fieldsplit_0"]["ksp_converged_reason"] = None
-stokes_solver.solver_parameters["fieldsplit_1"]["ksp_converged_reason"] = None
 
 # We now initiate the time loop, which runs for the number of timesteps specified above.
 
@@ -244,8 +246,8 @@ for timestep in range(0, timesteps):
     f_ratio = rmin/rmax
     top_scaling = 1.3290170684486309  # log(f_ratio) / (1.- f_ratio)
     bot_scaling = 0.7303607313096079  # (f_ratio * log(f_ratio)) / (1.- f_ratio)
-    nusselt_number_top = gd.Nu_top() * top_scaling
-    nusselt_number_base = gd.Nu_bottom() * bot_scaling
+    nusselt_number_top = gd.Nu_top(scale=top_scaling)
+    nusselt_number_base = gd.Nu_bottom(scale=bot_scaling)
     energy_conservation = abs(abs(nusselt_number_top) - abs(nusselt_number_base))
 
     # Log diagnostics:

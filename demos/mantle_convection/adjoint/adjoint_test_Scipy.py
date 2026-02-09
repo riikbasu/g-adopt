@@ -16,10 +16,6 @@
 # checkpoint file on our servers.  These fields serve as benchmarks for evaluating our inverse problem's performance. To
 # download the reference benchmark checkpoint file if it doesn't already exist, execute the following command:
 
-# +
-# import petsc4py
-# petsc4py.init(['-log_view', 'solver_log.txt', '-ksp_monitor'])
-
 # + tags=["active-ipynb"]
 # ![ ! -f adjoint-demo-checkpoint-state.h5 ] && wget https://data.gadopt.org/demos/adjoint-demo-checkpoint-state.h5
 # -
@@ -31,6 +27,8 @@
 # +
 from gadopt import *
 from gadopt.inverse import *
+from gadopt.utility import log
+import inspect
 # Open the checkpoint file and subsequently load the mesh:
 checkpoint_filename = "adjoint-demo-checkpoint-state.h5"
 checkpoint_file = CheckpointFile(checkpoint_filename, mode="r")
@@ -47,11 +45,6 @@ velocity_timestepping_info = checkpoint_file.get_timestepping_history(mesh, "Vel
 # -
 
 # We can check the information for each:
-
-# + tags=["active-ipynb"]
-# print("Timestepping info for Temperature", temperature_timestepping_info)
-# print("Timestepping info for Velocity", velocity_timestepping_info)
-# -
 
 # The timestepping information reveals that there are 80 time-steps (from 0 to 79) in the reference simulation,
 # with the temperature field stored only at the initial (index=0) and final (index=79) timesteps, while the
@@ -71,15 +64,6 @@ checkpoint_file.close()
 # + tags=["active-ipynb"]
 # import pyvista as pv
 # VTKFile("./visualisation_vtk.pvd").write(Tobs, Tic_ref)
-# # dataset = pv.read('./visualisation_vtk.pvd')
-# # # Create a plotter object
-# # plotter = pv.Plotter()
-# # # Add the dataset to the plotter
-# # plotter.add_mesh(dataset, scalars='Observed Temperature', cmap='coolwarm')
-# # # Adjust the camera position
-# # plotter.camera_position = [(0.5, 0.5, 2.5), (0.5, 0.5, 0), (0, 1, 0)]
-# # # Show the plot
-# # plotter.show(jupyter_backend="static")
 # -
 
 # The Inverse Code
@@ -98,11 +82,6 @@ checkpoint_file.close()
 
 tape = get_working_tape()
 tape.clear_tape()
-
-# + tags=["active-ipynb"]
-# # To verify the tape is empty, we can print all blocks:
-# print(tape.get_blocks())
-# -
 
 # From here on, all user operations are specified with minimal differences relative to
 # to our forward code. Under the hood, however, the tape will be populated
@@ -149,12 +128,8 @@ temp_bcs = {
 
 # Setup Energy and Stokes solver
 energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs)
-# energy_solver.solver_parameters['ksp_converged_reason'] = None
-# energy_solver.solver_parameters['ksp_view'] = None
 stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
                              nullspace=Z_nullspace, transpose_nullspace=Z_nullspace, constant_jacobian=True)
-# stokes_solver.solver_parameters['ksp_converged_reason'] = None
-# stokes_solver.solver_parameters['ksp_view'] = None
 # -
 
 # Specify Problem Length
@@ -196,7 +171,7 @@ T0_bcs = [DirichletBC(Q1, 0., boundary.top), DirichletBC(Q1, 1., boundary.bottom
 T0 = Function(Q1, name="Initial_Guess_Temperature").project(Tic, bcs=T0_bcs)
 
 # We next make pyadjoint aware of our control problem:
-control = Control(Tic)
+control = Control(Tic, riesz_map="l2")
 
 # Take our initial guess and project to T, simultaneously applying boundary conditions in the Q2 space:
 T.project(Tic, bcs=energy_solver.strong_bcs)
@@ -295,7 +270,7 @@ objective = (
 #
 # To define the reduced functional, we provide the class with an objective (which is an overloaded UFL object) and the control.
 
-rf = ReducedFunctional(objective, control)
+rf = L2TransformedFunctional(objective, control, alpha=1)
 
 # At this point, we have completed annotating the tape with the necessary information from running the forward simulation.
 # To prevent further annotations during subsequent operations, we stop the annotation process. This ensures that no additional
@@ -373,29 +348,6 @@ T_ub.assign(1.0)
 # Define the minimisation problem, with the goal to minimise the reduced functional
 # Note: in some scenarios, the goal might be to maximise (rather than minimise) the functional.
 minimisation_problem = MinimizationProblem(rf, bounds=(T_lb, T_ub))
-
-# +
-# from scipy.optimize import minimize
-# import inspect
-
-# def callback(intermediate_result):
-#     sf = inspect.stack()[3].frame.f_locals["sf"]
-#     print(f"{intermediate_result.fun=}")
-#     print(f"{sf.nfev=}, {sf.ngev=}")
-
-# # Define the minimisation problem, with the goal to minimise the reduced functional
-# # Note: in some scenarios, the goal might be to maximise (rather than minimise) the functional.
-# options = { 'maxcor': 10, # The maximum number of variable metric corrections (memory)
-#             'ftol': 1e7* np.finfo(float).eps,# 1e14 for low accuracy, 1e7 for mid-accuracy, 10 for high accuracy
-#             'gtol': 0,#1e-5, # Iteration stops if projection of gradient is smaller than this
-#             'eps': 1e-8, # Only used when approx grad is True
-#             'maxfun': 15000, # Maximum number of evaluations
-#             'maxiter': 5, # Maximum number of iterations
-#             'maxls': 20, # Maximum number of line-searth steps
-#         }
-
-# # Setting up the problem using minimize that uses Scipy
-# sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
 # ## Using Scipy minimize
@@ -555,7 +507,11 @@ rf.derivative_cb_post = record_post_grad
 rf.hessian_cb_pre = record_pre_hess
 rf.hessian_cb_post = record_post_hess
 
-# algo = scipy_minimize(method='trust-krylov', **kwargs)
+def callback(intermediate_result):
+    sf = inspect.stack()[3].frame.f_locals["sf"]
+    log(f"{intermediate_result.fun=}")
+    log(f"{sf.nfev=}, {sf.ngev=}")
+
 # Setting up the problem using minimize that uses Scipy
 print(f"Iteration: 0 completed")
 sol = minimize(rf, method = 'L-BFGS-B', bounds=(T_lb, T_ub), tol=1e-12, callback=callback, options={"disp": True, "maxiter": 200})

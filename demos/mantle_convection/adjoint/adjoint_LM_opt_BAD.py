@@ -526,7 +526,6 @@ def record_post_grad(checkpoint, derivatives, values, *args):
 #     initial_misfit_values.append(init_misfit)
 #     final_misfit_values.append(final_misfit)
 
-
 reduced_functional.eval_cb_pre = record_pre_func
 reduced_functional.eval_cb_post = record_post_func
 reduced_functional.derivative_cb_pre = record_pre_grad

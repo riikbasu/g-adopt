@@ -88,7 +88,7 @@ steady_state_tolerance = 1e-7  # Used to determine if solution has reached a ste
 # We choose the initial temperature distribution to trigger upwelling of 4 equidistant plumes.
 # This initial temperature field is prescribed as:
 #
-# $$T(x,y) = (r_{\text{max}} - r) + A\cos(4 \; atan2\ (y,x))  \sin(r-r_{\text{min}}) \pi)$$
+# $$T(x,y) = (r_{\text{max}} - r) + A\cos(4 \; atan2\ (y,x))  \sin((r-r_{\text{min}}) \pi)$$
 #
 # where $A=0.02$ is the amplitude of the initial perturbation.
 
@@ -118,7 +118,7 @@ T.interpolate(rmax - r + 0.02*cos(4*atan2(X[1], X[0])) * sin((r - rmin) * pi))
 Z_nullspace = create_stokes_nullspace(Z, closed=True, rotational=True)
 
 # Given the increased computational expense (typically requiring more degrees of freedom) in a 2-D annulus domain, G-ADOPT defaults to iterative
-# solver parameters. As noted in our previous 3-D Cartesian tutorial, G-ADOPT's iterative solver setup is configured to use the GAMG preconditioner
+# solver parameters. As noted in our [3-D Cartesian tutorial](../3d_cartesian), G-ADOPT's iterative solver setup is configured to use the GAMG preconditioner
 # for the velocity block of the Stokes system, to which we must provide near-nullspace information, which, in 2-D, consists of two rotational and two
 # translational modes.
 
@@ -146,7 +146,6 @@ temp_bcs = {
 
 # +
 output_file = VTKFile("output.pvd")
-ref_file = VTKFile('reference_state.pvd')
 output_frequency = 50
 
 plog = ParameterLog('params.log', mesh)
@@ -163,10 +162,10 @@ energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs
 
 stokes_solver = StokesSolver(
     z,
-    T,
     approximation,
+    T,
     bcs=stokes_bcs,
-    constant_jacobian=True,
+    solver_parameters="iterative",
     nullspace=Z_nullspace,
     transpose_nullspace=Z_nullspace,
     near_nullspace=Z_near_nullspace,
@@ -197,8 +196,8 @@ for timestep in range(0, timesteps):
     f_ratio = rmin/rmax
     top_scaling = 1.3290170684486309  # log(f_ratio) / (1.- f_ratio)
     bot_scaling = 0.7303607313096079  # (f_ratio * log(f_ratio)) / (1.- f_ratio)
-    nusselt_number_top = gd.Nu_top() * top_scaling
-    nusselt_number_base = gd.Nu_bottom() * bot_scaling
+    nusselt_number_top = gd.Nu_top(scale=top_scaling)
+    nusselt_number_base = gd.Nu_bottom(scale=bot_scaling)
     energy_conservation = abs(abs(nusselt_number_top) - abs(nusselt_number_base))
 
     # Calculate L2-norm of change in temperature:

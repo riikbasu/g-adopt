@@ -1,9 +1,10 @@
 - [Tutorials](index.md)
-- Mantle convection
+- [Mantle convection](mantle_convection/index.md)
     - Base case
         - [base_case](mantle_convection/base_case.ipynb)
     - Physical approximation (rheology)
         - [viscoplastic_case](mantle_convection/viscoplastic_case.ipynb)
+        - [Drucker_Prager](mantle_convection/Drucker_Prager.ipynb)
     - Physical approximation (compressibility)
         - [2d_compressible_TALA](mantle_convection/2d_compressible_TALA.ipynb)
         - [2d_compressible_ALA](mantle_convection/2d_compressible_ALA.ipynb)
@@ -19,12 +20,23 @@
     - Adjoint
         - [adjoint_forward](mantle_convection/adjoint_forward.ipynb)
         - [adjoint](mantle_convection/adjoint.ipynb)
-- Multi-material
-    - [compositional_buoyancy](multi_material/compositional_buoyancy.ipynb)
-    - [thermochemical_buoyancy](multi_material/thermochemical_buoyancy.ipynb)
-- Glacial isostatic adjustment
+    - Dynamic topography
+        - [dynamic_topography](mantle_convection/dynamic_topography.ipynb)
+- [Glacial isostatic adjustment](glacial_isostatic_adjustment/index.md)
     - [base_case](glacial_isostatic_adjustment/base_case.ipynb)
     - [2d_cylindrical](glacial_isostatic_adjustment/2d_cylindrical.ipynb)
+    - [2d_cylindrical_lvv](glacial_isostatic_adjustment/2d_cylindrical_lvv.ipynb)
+    - [adjoint_ice](glacial_isostatic_adjustment/adjoint_ice.ipynb)
+- Multi-material
+    - Sources of buoyancy
+        - [compositional_buoyancy](multi_material/compositional_buoyancy.ipynb)
+        - [thermochemical_buoyancy](multi_material/thermochemical_buoyancy.ipynb)
+    - Boundary condition
+        - [free_surface](multi_material/free_surface.ipynb)
+    - Geometry
+        - [2d_cylindrical](multi_material/2d_cylindrical.ipynb)
 - PDE-constrained optimisation
-    - [pde_constrained_boundary](PDE_constrained_optimisation/PDE_constrained_boundary.ipynb)
     - [pde_constrained_field](PDE_constrained_optimisation/PDE_constrained_field.ipynb)
+    - [pde_constrained_boundary](PDE_constrained_optimisation/PDE_constrained_boundary.ipynb)
+- Smoothing
+    - [smoothing](smoothing/smoothing.ipynb)

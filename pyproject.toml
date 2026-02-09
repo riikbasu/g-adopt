@@ -18,14 +18,16 @@ classifiers = [
 dependencies = [
   "pandas",
   "shapely",
-  "vtk<9.5.0",
+  "vtk",
+  "irksome @ git+https://github.com/firedrakeproject/irksome",
 ]
 
 [project.optional-dependencies]
-demos = ["assess", "gmsh", "imageio", "jupytext", "openpyxl", "pyvista"]
+demos = ["assess", "gadopt-demo-utils @ git+https://github.com/g-adopt/gadopt-demo-utils.git", "gmsh", "imageio", "jupytext", "openpyxl", "pyvista"]
 optimisation = ["pyroltrilinos"]
 
 [tool.setuptools]
-packages = ["gadopt", "gadopt.gplates"]
+packages = ["gadopt", "gadopt.gplates", "gadopt.demos"]
+package-dir = { "gadopt.demos" = "demos" }
 
 [tool.setuptools_scm]

@@ -160,7 +160,7 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-# initial_timestep = timesteps - 5
+# initial_timestep = timesteps - 3
 initial_timestep = 0
 
 # Define the Control Space
@@ -339,12 +339,15 @@ pause_annotation()
 # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
 # that our gradients are accurate and reliable for optimisation.
 
-gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
+# +
+# gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
 
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots()
-collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-fig.colorbar(collection);
+# +
+# import matplotlib.pyplot as plt
+# fig, axes = plt.subplots()
+# collection = tripcolor(gradJ, axes=axes, cmap='viridis')
+# fig.colorbar(collection);
+# -
 
 # Running the inversion
 # ---------------------

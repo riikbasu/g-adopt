@@ -179,7 +179,7 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
     # `timesteps - 10`.
     
     # initial_timestep = timesteps - 10
-    initial_timestep = timesteps - 5
+    initial_timestep = 0
     
     # Define the Control Space
     # ------------------------
@@ -199,7 +199,15 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
     # Note that this layer average will later be used for the smoothing term in our objective functional.
     with CheckpointFile(checkpoint_filename, mode="r") as checkpoint_file:
         Taverage = checkpoint_file.load_function(mesh, "Average_Temperature", idx=initial_timestep)
-    Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
+    # Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
+
+    # Reassign Tic with the new state
+    new_checkpoint_filename = 'adjoint-demo-checkpoint-state-bad.h5'
+    new_checkpoint_file = CheckpointFile(new_checkpoint_filename, mode="r")
+    new_temperature_timestepping_info = new_checkpoint_file.get_timestepping_history(mesh, "Temperature")
+    Tic = new_checkpoint_file.load_function(mesh, "Temperature", idx=int(new_temperature_timestepping_info["index"][-1]))
+    Tic.rename("Initial_Condition_Temperature")
+    new_checkpoint_file.close()
     
     # Given that Tic will be updated during the optimisation, we also create a function to store our initial guess,
     # which we will later use for smoothing. Note that since smoothing is executed in the control space, we must
@@ -357,10 +365,10 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
     # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
     # that our gradients are accurate and reliable for optimisation.
     
-    gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
-    fig, axes = plt.subplots()
-    collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-    fig.colorbar(collection);
+    # gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
+    # fig, axes = plt.subplots()
+    # collection = tripcolor(gradJ, axes=axes, cmap='viridis')
+    # fig.colorbar(collection);
     
     # Running the inversion
     # ---------------------
@@ -412,7 +420,7 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
     # 
     
     minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-    minimisation_parameters["Status Test"]["Iteration Limit"] = 10
+    minimisation_parameters["Status Test"]["Iteration Limit"] = 20
     minimisation_parameters["General"]["Krylov"] = {
         "Absolute Tolerance": abs_tol,
         "Relative Tolerance": rel_tol,
@@ -433,7 +441,7 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
     rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
     rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
     
-    solutions_vtk = VTKFile("solutions_NK_tests_"+str(parameter_set)+".pvd")
+    solutions_vtk = VTKFile("solutions_NK_tests_focussed"+str(parameter_set)+".pvd")
     solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
     solution_final = Function(T.function_space(), name="Final_Temperature")    
     functional_values = []
@@ -512,7 +520,15 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
     def record_misfit_values(init_misfit, final_misfit):
         initial_misfit_values.append(init_misfit)
         final_misfit_values.append(final_misfit)
-    
+
+    reduced_functional.eval_cb_pre = record_pre_func
+    reduced_functional.eval_cb_post = record_post_func
+    reduced_functional.derivative_cb_pre = record_pre_grad
+    reduced_functional.derivative_cb_post = record_post_grad
+    reduced_functional.hessian_cb_pre = record_pre_hess
+    reduced_functional.hessian_cb_post = record_post_hess
+    my_file = CheckpointFile("Final_State_NK_DQ2_BAD_"+str(parameter_set)+".h5", "w")
+    my_file.save_mesh(mesh)
     
     
     class StatusTest(ROL.StatusTest):
@@ -525,13 +541,6 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
             final_misfit = assemble(
                 (T.block_variable.checkpoint - Tobs) ** 2 * dx
             )
-    
-            reduced_functional.eval_cb_pre = record_pre_func
-            reduced_functional.eval_cb_post = record_post_func
-            reduced_functional.derivative_cb_pre = record_pre_grad
-            reduced_functional.derivative_cb_post = record_post_grad
-            reduced_functional.hessian_cb_pre = record_pre_hess
-            reduced_functional.hessian_cb_post = record_post_hess
             record_misfit_values(initial_misfit, final_misfit)
             
             # Print output for ease of tracking simulation progress:
@@ -569,6 +578,9 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
             solution_IC.assign(Tic.block_variable.checkpoint)
             solution_final.assign(T.block_variable.checkpoint)        
             solutions_vtk.write(solution_IC, solution_final)
+            # Write checkpoint
+            my_file.save_function(solution_IC, name="Initial Temperature", idx=iteration,
+                                  timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
             iteration = iteration + 1
             return super().check(status)
     
@@ -579,16 +591,18 @@ def NK_batch_test(functional_file, parameter_set, line_search_type, curvature_co
 
 # -
 
-def main():
-    functional_file = sys.argv[1]
-    parameter_set = sys.argv[2]
-    line_search_type = sys.argv[3]
-    curvature_condition = sys.argv[4]
-    abs_tol = sys.argv[5]
-    rel_tol = sys.argv[6]
-    iterations = sys.argv[7]
+def main(args):
+    # functional_file = sys.argv[1]
+    # parameter_set = sys.argv[2]
+    # line_search_type = sys.argv[3]
+    # curvature_condition = sys.argv[4]
+    # abs_tol = sys.argv[5]
+    # rel_tol = sys.argv[6]
+    # iterations = sys.argv[7]
+    functional_file, parameter_set, line_search_type, curvature_condition, abs_tol, rel_tol, iterations = args
     NK_batch_test(functional_file, parameter_set, line_search_type, curvature_condition, abs_tol, rel_tol, iterations)
 
 
 if __name__ == '__main__':
-    main()
+    args = parse_arguments()
+    main(args)

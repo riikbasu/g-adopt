@@ -160,7 +160,7 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-# initial_timestep = timesteps - 5
+# initial_timestep = timesteps - 3
 initial_timestep = 0
 
 # Define the Control Space
