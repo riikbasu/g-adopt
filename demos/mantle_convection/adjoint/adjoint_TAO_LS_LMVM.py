@@ -16,6 +16,8 @@
 # checkpoint file on our servers.  These fields serve as benchmarks for evaluating our inverse problem's performance. To
 # download the reference benchmark checkpoint file if it doesn't already exist, execute the following command:
 
+
+
 # + tags=["active-ipynb"]
 # ![ ! -f adjoint-demo-checkpoint-state.h5 ] && wget https://data.gadopt.org/demos/adjoint-demo-checkpoint-state.h5
 # -
@@ -27,8 +29,9 @@
 # +
 from gadopt import *
 from gadopt.inverse import *
+from pyadjoint import TAOSolver
 # Open the checkpoint file and subsequently load the mesh:
-checkpoint_filename = "adjoint-demo-checkpoint-state.h5"
+checkpoint_filename = "adjoint-demo-checkpoint-state-highres.h5"
 checkpoint_file = CheckpointFile(checkpoint_filename, mode="r")
 mesh = checkpoint_file.load_mesh("firedrake_default_extruded")
 mesh.cartesian = True
@@ -145,15 +148,8 @@ temp_bcs = {
 
 # Setup Energy and Stokes solver
 energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs)
-stokes_solver = StokesSolver(
-    z,
-    T,
-    approximation,
-    bcs=stokes_bcs,
-    constant_jacobian=True,
-    nullspace=Z_nullspace,
-    transpose_nullspace=Z_nullspace,
-)
+stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
+                             nullspace=Z_nullspace, transpose_nullspace=Z_nullspace, constant_jacobian=True)
 # -
 
 # Specify Problem Length
@@ -344,12 +340,12 @@ pause_annotation()
 # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
 # that our gradients are accurate and reliable for optimisation.
 
-gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
+# gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
 
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots()
-collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-fig.colorbar(collection);
+# import matplotlib.pyplot as plt
+# fig, axes = plt.subplots()
+# collection = tripcolor(gradJ, axes=axes, cmap='viridis')
+# fig.colorbar(collection);
 
 # Running the inversion
 # ---------------------
@@ -396,62 +392,16 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
-# Using the Lin-Moré optimiser
-# ----------------------------
-#
-# In this tutorial, we employ the trust region method of Lin and Moré (1999) implemented in ROL (Rapid Optimization Library).
-# Lin-Moré is a truncated Newton method, which involves the repeated application of an iterative algorithm to approximately
-# solve Newton’s equations (Dembo and Steihaug, 1983).
-#
-# Lin-Moré effectively handles provided bound constraints by ensuring that variables remain within their specified bounds.
-# During each iteration, variables are classified into "active" and "inactive" sets. Variables at their bounds that do not
-# allow descent are considered active and are fixed during the iteration. The remaining variables, which can change without
-# violating the bounds, are inactive. These properties make the algorithm robust and efficient for solving bound-constrained
-# optimisation problems.
-#
-# For our solution of the optimisation problem we use the pre-defined paramters set in gadopt by using `minimsation_parameters`.
-# Here, we set the number of iterations to only 5, as opposed to the default 100. We also adjust the step-length for this problem,
-# by setting it to a lower value than our default.
-
-minimisation_parameters["Status Test"]["Iteration Limit"] = 100
-# minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
-# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
-# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
-# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
-# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
-# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
-
-# A notable feature of this optimisation approach in ROL is its checkpointing capability. For every iteration,
-# all information necessary to restart the optimisation from that iteration is saved in the specified `checkpoint_dir`.
-
-# Define the LinMore Optimiser class with checkpointing capability:
-optimiser = LinMoreOptimiser(
-    minimisation_problem,
-    minimisation_parameters,
-    checkpoint_dir="optimisation_checkpoint",
-)
-
-# For sake of book-keeping the simulation, we have also implemented a user-defined way of
-# recording information that might be used to check the optimisation performance. This
-# callback function will be executed at the end of each iteration. Here, we write out
-# the control field, i.e., the reconstructed intial temperature field, at the end of
-# each iteration. To access the last value of *an overloaded object* we should access the
-# `.block_variable.checkpoint` method as below.
-#
-# For the sake of this demo, we also record the values of the reduced
-# functional directly in order to produce a plot of the convergence.
+# ## Using Line search with Quasi-Newton method
 
 # +
-import datetime
-import time
+# Define callbacks
 
-solutions_vtk = VTKFile("solutions.pvd")
-functional_values = []
-solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
-solution_final = Function(T.function_space(), name="Final_Temperature")    
-functional_values = []
-initial_misfit_values = []
-final_misfit_values = []
+functional_file = "functional_TAO_LS_LMVM.txt"
+solutions_vtk = VTKFile("solutions_TAO_LS_LMVM.pvd")
+
+import datetime
+
 counter_hess = 0
 counter_func = 0
 counter_grad = 0
@@ -464,14 +414,13 @@ elapsed_time_grad = 0
 iteration = 0
 
 # Profiling
-# Profiling
 def record_pre_hess(*args):
     global counter_hess
     global start_time_hess
     counter_hess = counter_hess + 1
     start_time_hess = datetime.datetime.now()
     start_time_hess_disp = start_time_hess.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    log(f"Hessian calculation started with count: {counter_hess} at time: {start_time_hess_disp}")
+    print(f"Hessian calculation started with count: {counter_hess} at time: {start_time_hess_disp}")
 
 def record_post_hess(*args):
     global counter_hess
@@ -485,7 +434,7 @@ def record_post_hess(*args):
     hours = total_seconds // 3600
     minutes = (total_seconds % 3600) // 60
     seconds = total_seconds % 60
-    log(f"Hessian calculation finished with count: {counter_hess} at time: {end_time_hess_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
+    print(f"Hessian calculation finished with count: {counter_hess} at time: {end_time_hess_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
 
 def record_pre_func(*args):
     global counter_func
@@ -493,7 +442,7 @@ def record_pre_func(*args):
     counter_func = counter_func + 1
     start_time_func = datetime.datetime.now()
     start_time_func_disp = start_time_func.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    log(f"Functional calculation started with count: {counter_func} at time: {start_time_func_disp}")
+    print(f"Functional calculation started with count: {counter_func} at time: {start_time_func_disp}")
 
 def record_post_func(func_value, *args):
     global start_time_func
@@ -506,8 +455,8 @@ def record_post_func(func_value, *args):
     hours = total_seconds // 3600
     minutes = (total_seconds % 3600) // 60
     seconds = total_seconds % 60
-    log(f"Functional calculation finished with count: {counter_func} at time: {end_time_func_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
-    functional_values.append(func_value)
+    print(f"Functional calculation finished with count: {counter_func} at time: {end_time_func_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
+    # functional_values.append(func_value)
 
 def record_pre_grad(controls, *args):
     global start_time_grad
@@ -515,7 +464,7 @@ def record_pre_grad(controls, *args):
     counter_grad = counter_grad + 1
     start_time_grad = datetime.datetime.now()
     start_time_grad_disp = start_time_grad.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    log(f"Gradient calculation started with count: {counter_grad} at time: {start_time_grad_disp}")
+    print(f"Gradient calculation started with count: {counter_grad} at time: {start_time_grad_disp}")
     return controls
 
 def record_post_grad(checkpoint, derivatives, values, *args):
@@ -529,103 +478,296 @@ def record_post_grad(checkpoint, derivatives, values, *args):
     hours = total_seconds // 3600
     minutes = (total_seconds % 3600) // 60
     seconds = total_seconds % 60
-    log(f"Gradient calculation finished with count: {counter_grad} at time: {end_time_grad_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
+    print(f"Gradient calculation finished with count: {counter_grad} at time: {end_time_grad_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
     return derivatives
 
-# Log values of initial and final misfit:
-def record_misfit_values(init_misfit, final_misfit):
-    initial_misfit_values.append(init_misfit)
-    final_misfit_values.append(final_misfit)
+
+reduced_functional.eval_cb_pre = record_pre_func
+reduced_functional.eval_cb_post = record_post_func
+reduced_functional.derivative_cb_pre = record_pre_grad
+reduced_functional.derivative_cb_post = record_post_grad
+reduced_functional.hessian_cb_pre = record_pre_hess
+reduced_functional.hessian_cb_post = record_post_hess
+
+# import datetime
+# func_count = grad_count = hess_count = 0
+# func_time = grad_time = hess_time = 0.0
+
+# def timed_objective(tao, x):
+#     global func_count, func_time
+#     func_count += 1
+#     start = datetime.datetime.now()
+
+#     # The actual evaluation of the functional
+#     val = reduced_functional(x)
+
+#     func_time += (datetime.datetime.now() - start).total_seconds()
+#     return val
+
+# # Signature: timed_gradient(tao, x, g)
+# def timed_gradient(tao, x, g):
+#     global grad_count, grad_time
+#     grad_count += 1
+#     start = datetime.datetime.now()
+
+#     # Calculate the gradient and fill the PETSc Vec 'g'
+#     g[:] = reduced_functional.derivative(x)
+
+#     grad_time += (datetime.datetime.now() - start).total_seconds()
 
 
-def callback():
-    global iteration
+# def timed_hessian(tao, x, H, Hpre):
+#     global hess_count, hess_time
+#     hess_count += 1
+#     start = datetime.datetime.now()
+
+#     reduced_functional.hessian(x, H)          # assemble PETSc Mat
+
+#     hess_time += (datetime.datetime.now() - start).total_seconds()
+
+
+# ==========================================
+# TRUST REGION + L-BFGS (BOUNDED) CONFIG
+# ==========================================
+# solver = TAOSolver(minimisation_problem, {
+#     "tao_type": "ntr",                   # Newton Trust Region; default: nls (line search Newton)
+#     "tao_ntr_ksp_type": "stcg",
+    
+#     # --- Monitoring and Stopping ---
+#     "tao_monitor": True,                 # Print iteration log; default: False
+#     "tao_converged_reason": True,        # Print convergence reason; default: False
+#     "tao_gatol": 1e-8,                 # Gradient absolute tolerance; default: 1e-8
+#     "tao_grtol": 1e-8,                    # Relative gradient tolerance; default: 1e-8
+#     "tao_gttol": 1e-12,                    # Step tolerance; default: 1e-12
+#     "tao_max_it": 5,                   # Max iterations; default: 200
+
+#     # --- Trust-Region Parameters ---
+#     "tao_trust0": 1.0,                   # Initial trust-region radius; default: 1.0
+#     "tao_trust_max": 100.0,              # Maximum trust-region radius; default: 1e8
+#     "tao_eta": 0.1,                     # Step acceptance threshold; default: 0.1
+#     "tao_alpha1": 0.25,                  # Shrink factor (mild rejection); default: 0.25
+#     "tao_alpha2": 0.5,                   # Shrink factor (strong rejection); default: 0.5
+#     "tao_gamma1": 1.5,                   # Expand factor (mild); default: 1.5
+#     "tao_gamma2": 2.0,                   # Expand factor (moderate); default: 2.0
+#     "tao_gamma3": 4.0,                   # Expand factor (aggressive); default: 4.0
+
+#     # --- Hessian and Preconditioner (L-BFGS) ---
+#     "tao_ntr_pc_type": "lmvm",           # Use LMVM (L-BFGS) as preconditioner; default: none
+#     "tao_lmm_vectors": 10,               # Memory length for secant pairs; default: 5
+#     "tao_lmm_scale_type": "scalar",      # Initial Hessian scaling; default: scalar
+#     "tao_bfgs_rescale": True,            # Rescale secant pairs if curvature fails; default: True
+
+#     # --- Linear Solver (Inner Iterations) ---
+#     "tao_ntr_ksp_rtol": 1e-4,            # Relative tolerance for KSP; default: 1e-4
+#     "tao_ntr_ksp_max_it": 50,           # Max KSP iterations; default: 50
+#     "tao_ntr_pc_type": "lmvm",           # Preconditioner for KSP; default: none
+
+#     # --- Bounds and Active Set Handling ---
+#     "tao_bounded_type": "clip",          # Clip variables to bounds; default: 'clip'
+#     "tao_bmvm_eps": 1e-8,                # Feasibility tolerance; default: 1e-8
+#     "tao_blmvm_as_type": "grad",         # Active-set strategy; default: 'grad'
+
+#     # --- Optional diagnostics ---
+#     "tao_view": True,                   # Print solver setup; default: False
+#     "tao_view_solution": True,          # Print solution vector; default: False
+# })
+
+# ==========================================
+# BOUNDED L-BFGS (LINE SEARCH) SOLVER CONFIG
+# ==========================================
+
+# ================================================================
+# Step 1: Set PETSc TAO options to enable internal text output
+# ================================================================
+# import petsc4py.PETSc as PETSc
+from firedrake.petsc import PETSc
+# PETSc.Options().setValue("tao_monitor", "")        # show f, ||g||, step
+# PETSc.Options().setValue("tao_monitor_globalization", "")        # show f, ||g||, step
+# PETSc.Options().setValue("tao_converged_reason", "")   # print convergence reason
+# PETSc.Options().setValue("tao_view", "")               # print final TAO summary
+# PETSc.Options().setValue("log_view", "")               # print final TAO summary
+
+solver = TAOSolver(minimisation_problem, {
+    # -------------------------------------------------------
+    # Core Algorithm Selection
+    # -------------------------------------------------------
+    "tao_type": "blmvm",                         # Use BLMVM algorithm (L-BFGS with bounds); default: nls
+
+
+    # -------------------------------------------------------
+    # 1. Active Set & Bounds Handling (BLMVM-specific)
+    # -------------------------------------------------------
+    "tao_blmvm_as_type": "grad",                 # Active-set detection method ('grad'|'proj'); default: 'grad'
+    "tao_bmvm_eps": 1e-8,                        # Bound feasibility tolerance; default: 1e-8
+    "tao_bounded_type": "clip",                  # Bound enforcement ('clip'|'project'); default: 'clip'
+
+
+    # -------------------------------------------------------
+    # 2. L-BFGS / Limited-Memory Matrix (used inside BLMVM)
+    # -------------------------------------------------------
+    "tao_lmm_vectors": 5,                        # Number of stored (s,y) correction pairs; default: 5
+    "tao_lmm_scale_type": "scalar",              # Initial Hessian scaling ('none'|'scalar'|'diagonal'); default: 'scalar'
+    "tao_lmm_limit_type": "none",                # Memory limiting strategy ('none'|'average'); default: 'none'
+    "tao_lmm_bfgs": True,                        # Use BFGS updates (True) or DFP (False); default: True
+    "tao_lmm_alpha": 1.0,                        # Damping factor for quasi-Newton update; default: 1.0
+    "tao_bfgs_rescale": True,                    # Rescale if curvature condition violated; default: True
+
+
+    # -------------------------------------------------------
+    # 3. Globalization via Line Search
+    # -------------------------------------------------------
+    "tao_ls_type": "more-thuente",               # Line search ('more-thuente'|'armijo'|'gpcg'); default: 'more-thuente'
+    "tao_ls_ftol": 1e-4,                         # Armijo sufficient decrease parameter; default: 1e-4
+    "tao_ls_gtol": 0.9,                          # Curvature (Wolfe) tolerance; default: 0.9
+    "tao_ls_stepmin": 1e-20,                     # Minimum step length allowed; default: 1e-20
+    "tao_ls_stepmax": 1e10,                      # Maximum step length allowed; default: 1e10
+    "tao_ls_rtol": 1e-10,                        # Relative line-search tolerance; default: 1e-10
+    # "tao_ls_monitor": "",                      # Print line search progress; default: off
+
+
+    # -------------------------------------------------------
+    # 4. Stopping Criteria
+    # -------------------------------------------------------
+    "tao_gatol": 1e-8,                           # Absolute gradient tolerance; default: 1e-8
+    "tao_grtol": 1e-8,                           # Relative gradient tolerance; default: 1e-8
+    "tao_gttol": 1e-12,                          # Step-size (trust region) tolerance; default: 1e-12
+
+
+    # -------------------------------------------------------
+    # 5. Iteration and Evaluation Limits
+    # -------------------------------------------------------
+    "tao_max_it": 200,                           # Maximum TAO iterations; default: 200
+    "tao_max_funcs": 10000,                      # Maximum function evaluations; default: 10000
+
+
+    # -------------------------------------------------------
+    # 6. Initialization Options
+    # -------------------------------------------------------
+    # "tao_init_type": "given",                    # Start point type ('given'|'constant'|'random'); default: 'given'
+    # "tao_zero_guess": True,                    # Override initial guess with zero; default: off
+
+
+    # -------------------------------------------------------
+    # 7. Monitoring, Output & Debugging
+    # -------------------------------------------------------
+    # "tao_monitor": "",                         # Print iteration summary; default: off
+    # "tao_monitor_all": "",                     # Print all internal data each iteration; default: off
+    # "tao_view": "",                            # Print solver options; default: off
+    # "tao_view_solution": "",                   # Print final solution; default: off
+    # "tao_view_gradient": "",                   # Print gradient at solution; default: off
+    # "tao_view_hessian": "",                    # Print Hessian approximation (L-BFGS stats); default: off
+    # "tao_converged_reason": "",                # Print convergence reason; default: off
+    # "tao_history": "",                         # Record objective/gradient history; default: off
+    # "tao_draw_solution": "",                   # Draw solution each iteration; default: off
+    # "tao_view_kkt": "",                        # Print KKT diagnostics; default: off
+})
+
+# def my_iteration_monitor(tao, its, f, gnorm, gnormTrue, step):
+#     """
+#     Called by TAO after each optimization iteration.
+
+#     Args:
+#         tao (PETSc.TAO): The TAO solver object.
+#         its (int): The current iteration number.
+#         f (float): The current objective function value.
+#         gnorm (float): The 2-norm of the gradient (projected gradient for bounded).
+#         gnormTrue (float): The true (unprojected) gradient 2-norm (often the same as gnorm).
+#         step (float): The size of the last step taken.
+#     """
+    
+    # --- Standard TAO Information ---
+    # This prints the basic information TAO provides automatically via "tao_monitor"
+    # log(f"TAO Iteration: {its:02d} | Functional: {f:.6e} | Gradient Norm: {gnorm:.3e} | Step Size: {step:.3e}")
+
+    # # --- Custom Information (e.g., your profiling data) ---
+    # # You can access your global counters here, just as you did in your PyROL StatusTest.
+    # # Ensure no division by zero!
+    # avg_func = elapsed_time_func / counter_func if counter_func > 0 else 0.0
+    
+    # # Only print on rank 0 to avoid redundant output
+    # if MPI.COMM_WORLD.Get_rank() == 0:
+    #     log(f"  > Total Func Evals: {counter_func} (Avg Time: {avg_func:.4f}s)")
+        
+    #     # You could also add your misfit calculations here, as detailed in the previous response.
+    #     # initial_misfit = assemble((Tic - Tic_ref) ** 2 * dx)
+    #     # log(f"  > Misfit (IC): {initial_misfit:.6e}")
+        
+    # log("-" * 50)
+
+solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
+solution_final = Function(T.function_space(), name="Final_Temperature")    
+functional_values = []
+initial_misfit_values = []
+final_misfit_values = []
+
+def monitor(tao):
+    global counter_hess
+    global counter_func
+    global counter_grad
     initial_misfit = assemble(
         (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
     )
     final_misfit = assemble(
         (T.block_variable.checkpoint - Tobs) ** 2 * dx
     )
+    # Get the complete solution status tuple: 
+    # (its, f, res, cnorm, step)
+    try:
+        status = tao.getSolutionStatus()
+        its, f, res, cnorm, step, reason = status
+        print(f"TAO Iteration: {its} | Functional: {f} | Function evaluations: {counter_func} | Gradient evaluations: {counter_grad} | Hessian evaluations: {counter_hess} | Gradient Norm: {res} | C-Norm: {cnorm} | Step Size: {step} | Initial Misfit: {initial_misfit} | Final Misfit: {final_misfit}")
+        # Write functional and misfit values to a file (appending to avoid overwriting)
+        if MPI.COMM_WORLD.Get_rank() == 0:        
+            with open(functional_file, "a") as file:
+                file.write(f"TAO Iteration: {its} | Functional: {f} | Function evaluations: {counter_func} | Gradient evaluations: {counter_grad} | Hessian evaluations: {counter_hess} | Gradient Norm: {res} | C-Norm: {cnorm} | Step Size: {step} | Initial Misfit: {initial_misfit} | Final Misfit: {final_misfit} \n")
+        # Write VTK output:
+        solution_IC.assign(Tic.block_variable.checkpoint)
+        solution_final.assign(T.block_variable.checkpoint)        
+        solutions_vtk.write(solution_IC, solution_final)
 
-    reduced_functional.eval_cb_pre = record_pre_func
-    reduced_functional.eval_cb_post = record_post_func
-    reduced_functional.derivative_cb_pre = record_pre_grad
-    reduced_functional.derivative_cb_post = record_post_grad
-    reduced_functional.hessian_cb_pre = record_pre_hess
-    reduced_functional.hessian_cb_post = record_post_hess
-    record_misfit_values(initial_misfit, final_misfit)
-    
-    # Print output for ease of tracking simulation progress:
-    if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-        log(f"No Hessians, functionals and gradients calculated \n")
-    elif counter_hess == 0 and counter_grad == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0 ; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-    elif counter_hess == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-    else:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")  
-    if functional_values:
-        log(f"Functional: {functional_values[-1]};  Misfit (IC): {initial_misfit};  Misfit (Final): {final_misfit}")
-    else:
-        log(f"Functional value not recorded; Misfit (IC): {initial_misfit}; Misfit (Final): {final_misfit}")
+    except AttributeError:
+        print("Attribute Error")
+        # Fallback for older/different petsc4py versions 
+        # where the monitor still might only receive (tao,)
+        # its = tao.getIterationNumber()
+        # f = tao.getObjectiveValue()
+        # reason = tao.getConvergedReason
+        # # The other values are not reliably accessible without 
+        # # getSolutionStatus(), which is the key method for this.
+        # res, cnorm, step = float('nan'), float('nan'), float('nan')
 
-    # Write functional and misfit values to a file (appending to avoid overwriting)
-    if MPI.COMM_WORLD.Get_rank() == 0:        
-        with open("functional.txt", "a") as f:
-            f.write(f"Iteration: {iteration} \n")
-            if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-                f.write(f"No Hessians, functionals and gradients calculated \n")
-            elif counter_hess == 0 and counter_grad == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-            elif counter_hess == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            else:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            if functional_values:            
-                f.write(f"Functional value: {functional_values[-1]}, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
-            else:
-                f.write(f"Functional value: 0.0, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
+tao = solver.tao
+tao.setMonitor(monitor)
+# Explicitly view the TAO object properties
+tao.view() # This should print the solver configuration and type!
+T_opt = solver.solve()
 
-    # Write VTK output:
-    solution_IC.assign(Tic.block_variable.checkpoint)
-    solution_final.assign(T.block_variable.checkpoint)        
-    solutions_vtk.write(solution_IC, solution_final)
-    iteration = iteration + 1
+# Get convergence
+def tao_reason_to_text(reason_code):
+    reason_map = {
+        PETSc.TAO.ConvergedReason.CONVERGED_GATOL: "Converged: ||g|| ≤ gatol",
+        PETSc.TAO.ConvergedReason.CONVERGED_GRTOL: "Converged: ||g||/f ≤ grtol",
+        PETSc.TAO.ConvergedReason.CONVERGED_GTTOL: "Converged: trust region too small",
+        PETSc.TAO.ConvergedReason.CONVERGED_STEPTOL: "Converged: step size small",
+        PETSc.TAO.ConvergedReason.CONVERGED_MINF: "Converged: f ≤ f_min",
+        PETSc.TAO.ConvergedReason.DIVERGED_MAXITS: "Diverged: maximum iterations reached",
+        PETSc.TAO.ConvergedReason.DIVERGED_NAN: "Diverged: NaN encountered",
+        PETSc.TAO.ConvergedReason.DIVERGED_MAXFCN: "Diverged: max function evals reached",
+        PETSc.TAO.ConvergedReason.DIVERGED_LS_FAILURE: "Diverged: line search failure",
+        PETSc.TAO.ConvergedReason.DIVERGED_TR_REDUCTION: "Diverged: trust region reduction",
+        PETSc.TAO.ConvergedReason.DIVERGED_USER: "Diverged: user defined",
+        PETSc.TAO.ConvergedReason.CONTINUE_ITERATING: "Still iterating",
+    }
+    return reason_map.get(reason_code, f"Unknown reason code {reason_code}")
 
-optimiser.add_callback(callback)
+reason_code = tao.getConvergedReason()
+print(f"Converged Reason Code: {reason_code}, Converged Reason Text: {tao_reason_to_text(reason_code)}")
+if MPI.COMM_WORLD.Get_rank() == 0:
+    with open(functional_file, "a") as file:
+        file.write(f"Converged Reason Code: {reason_code}, Converged Reason Text: {tao_reason_to_text(reason_code)}")
 
-# If it existed, we could restore the optimisation from last checkpoint:
-# optimiser.restore()
-
-# Run the optimisation
-optimiser.run()
+# Explicitly view the TAO object properties
+tao.view() # This should print the solver configuration and type!
 # -
 
-# At this point a total number of 5 iterations are performed. For the example
-# case here with 10 timesteps this should result an adequete reduction
-# in the objective functional. Now we can look at the solution
-# visually. For the actual simulation with 80 time-steps, this solution
-# could be compared to `Tic_ref` as the "true solution".
-
-# + tags=["active-ipynb"]
-# # import pyvista as pv
-# # VTKFile("./solution.pvd").write(optimiser.rol_solver.rolvector.dat[0])
-# # dataset = pv.read('./solution.pvd')
-# # # Create a plotter object
-# # plotter = pv.Plotter()
-# # # Add the dataset to the plotter
-# # plotter.add_mesh(dataset, scalars=dataset[0].array_names[0], cmap='coolwarm')
-# # plotter.add_text("Solution after 5 iterations", font_size=10)
-# # # Adjust the camera position
-# # plotter.camera_position = [(0.5, 0.5, 2.5), (0.5, 0.5, 0), (0, 1, 0)]
-# # # Show the plot
-# # plotter.show(jupyter_backend="static")
-
-# + tags=["active-ipynb"]
-# # import matplotlib.pyplot as plt
-# # plt.plot(functional_values)
-# # plt.xlabel("Optimisation iteration")
-# # plt.ylabel("Reduced functional")
-# # plt.title("Optimisation convergence")
-# -
 

@@ -398,9 +398,17 @@ import datetime
 import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 20
+minimisation_parameters["Status Test"]["Iteration Limit"] = 200
 minimisation_parameters["Step"]["Trust Region"] = {
-    "Subproblem Solver": {"Type": "Dogleg"}
+    "Subproblem Solver": "Dogleg",
+    "Radius Shrinking Threshold": 0.15,
+    "Radius Growing Threshold": 0.65,
+    "Radius Shrinking Rate (Negative rho)": 0.03125,
+    "Radius Shrinking Rate (Positive rho)": 0.125,
+    "Radius Growing Rate": 5
+}
+minimisation_parameters["General"]["Secant"] = {
+    "Use as Preconditioner": True
 }
 # minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
 # try:
@@ -410,7 +418,7 @@ minimisation_parameters["Step"]["Trust Region"] = {
 #     rol_secant = ROL.lBFGS()
 rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_product="L2")
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
-rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
+rol_algorithm = ROL.TrustRegionAlgorithm(rol_params)
 
 solutions_vtk = VTKFile("solutions_TR_DL.pvd")
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")

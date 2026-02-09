@@ -30,7 +30,7 @@
 from gadopt import *
 from gadopt.inverse import *
 # Open the checkpoint file and subsequently load the mesh:
-checkpoint_filename = "adjoint-demo-checkpoint-state.h5"
+checkpoint_filename = "adjoint-demo-checkpoint-state-highres.h5"
 checkpoint_file = CheckpointFile(checkpoint_filename, mode="r")
 mesh = checkpoint_file.load_mesh("firedrake_default_extruded")
 mesh.cartesian = True
@@ -111,7 +111,7 @@ tape.clear_tape()
 # Set up function spaces:
 V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
 W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
-Q = FunctionSpace(mesh, "CG", 2)  # Temperature function space (scalar)
+Q = FunctionSpace(mesh, "DQ", 2)  # Temperature function space (scalar)
 Z = MixedFunctionSpace([V, W])  # Mixed function space
 
 # Specify test functions and functions to hold solutions:
@@ -160,7 +160,7 @@ stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-# initial_timestep = timesteps - 10
+# initial_timestep = timesteps - 3
 initial_timestep = 0
 
 # Define the Control Space
@@ -339,12 +339,15 @@ pause_annotation()
 # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
 # that our gradients are accurate and reliable for optimisation.
 
-gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
+# +
+# gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
 
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots()
-collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-fig.colorbar(collection);
+# +
+# import matplotlib.pyplot as plt
+# fig, axes = plt.subplots()
+# collection = tripcolor(gradJ, axes=axes, cmap='viridis')
+# fig.colorbar(collection);
+# -
 
 # Running the inversion
 # ---------------------
@@ -399,9 +402,19 @@ import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
 minimisation_parameters["Status Test"]["Iteration Limit"] = 20
-minimisation_parameters["Step"]["Line Search"] = {
-  "Descent Method": {"Type": "Newton-Krylov"}
+minimisation_parameters["General"]["Krylov"] = {
+    "Absolute Tolerance": 1e-1,
+    "Relative Tolerance": 1e-1,
+    "Iteration Limit": 10,    
 }
+minimisation_parameters["Step"]["Line Search"] = {
+    "Line-Search Method": {"Type": 'Cubic Interpolation'},
+    "Descent Method": {"Type": "Newton-Krylov"},
+    "Curvature Condition": {"Type": 'Strong Wolfe Conditions'}
+}
+# minimisation_parameters["General"]["Secant"] = {
+#     "Use as Preconditioner": True
+# }
 # minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
 # try:
 #     rol_secant = ROL.lBFGS(parameters["General"]["Secant"]["Maximum Storage"])
@@ -412,7 +425,7 @@ rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_prod
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
 rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
 
-solutions_vtk = VTKFile("solutions_NK_CG2.pvd")
+solutions_vtk = VTKFile("solutions_NK_DQ2_script1_highres.pvd")
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
 functional_values = []
@@ -508,6 +521,7 @@ class StatusTest(ROL.StatusTest):
     def check(self, status):
         # callback stuff goes here
         global iteration
+        delta_t = Constant(4e-6)
         initial_misfit = assemble(
             (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
         )
@@ -539,7 +553,7 @@ class StatusTest(ROL.StatusTest):
 
         # Write functional and misfit values to a file (appending to avoid overwriting)
         if MPI.COMM_WORLD.Get_rank() == 0:        
-            with open("functional_NK_CG2.txt", "a") as f:
+            with open("functional_NK_DQ2_script1_highres.txt", "a") as f:
                 f.write(f"Iteration: {iteration} \n")
                 if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
                     f.write(f"No Hessians, functionals and gradients calculated \n")
@@ -558,12 +572,17 @@ class StatusTest(ROL.StatusTest):
         solution_IC.assign(Tic.block_variable.checkpoint)
         solution_final.assign(T.block_variable.checkpoint)        
         solutions_vtk.write(solution_IC, solution_final)
+        # Write checkpoint
+        with CheckpointFile("Final_State_highres.h5", "w") as final_checkpoint:
+            final_checkpoint.save_mesh(mesh)
+            final_checkpoint.save_function(solution_IC, name="Initial Temperature", idx=iteration,
+                                  timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
+            # final_checkpoint.save_function(T, name="Temperature", idx=iteration,
+            #                       timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
+            # final_checkpoint.save_function(z, name="Stokes", idx=iteration,
+            #                       timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
         iteration = iteration + 1
         return super().check(status)
 
 rol_algorithm.setStatusTest(StatusTest(rol_params), False)
 rol_algorithm.run(rol_solver.rolvector, rol_solver.rolobjective)
-# -
-
-
-

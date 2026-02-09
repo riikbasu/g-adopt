@@ -16,10 +16,6 @@
 # checkpoint file on our servers.  These fields serve as benchmarks for evaluating our inverse problem's performance. To
 # download the reference benchmark checkpoint file if it doesn't already exist, execute the following command:
 
-# +
-# import petsc4py
-# petsc4py.init(['-log_view', 'solver_log.txt', '-ksp_monitor'])
-
 # + tags=["active-ipynb"]
 # ![ ! -f adjoint-demo-checkpoint-state.h5 ] && wget https://data.gadopt.org/demos/adjoint-demo-checkpoint-state.h5
 # -
@@ -31,6 +27,11 @@
 # +
 from gadopt import *
 from gadopt.inverse import *
+from gadopt.utility import log
+from firedrake.adjoint import (
+    L2TransformedFunctional)
+from pyadjoint.reduced_functional_numpy import ReducedFunctionalNumPy
+import inspect
 # Open the checkpoint file and subsequently load the mesh:
 checkpoint_filename = "adjoint-demo-checkpoint-state.h5"
 checkpoint_file = CheckpointFile(checkpoint_filename, mode="r")
@@ -47,11 +48,6 @@ velocity_timestepping_info = checkpoint_file.get_timestepping_history(mesh, "Vel
 # -
 
 # We can check the information for each:
-
-# + tags=["active-ipynb"]
-# print("Timestepping info for Temperature", temperature_timestepping_info)
-# print("Timestepping info for Velocity", velocity_timestepping_info)
-# -
 
 # The timestepping information reveals that there are 80 time-steps (from 0 to 79) in the reference simulation,
 # with the temperature field stored only at the initial (index=0) and final (index=79) timesteps, while the
@@ -71,15 +67,6 @@ checkpoint_file.close()
 # + tags=["active-ipynb"]
 # import pyvista as pv
 # VTKFile("./visualisation_vtk.pvd").write(Tobs, Tic_ref)
-# # dataset = pv.read('./visualisation_vtk.pvd')
-# # # Create a plotter object
-# # plotter = pv.Plotter()
-# # # Add the dataset to the plotter
-# # plotter.add_mesh(dataset, scalars='Observed Temperature', cmap='coolwarm')
-# # # Adjust the camera position
-# # plotter.camera_position = [(0.5, 0.5, 2.5), (0.5, 0.5, 0), (0, 1, 0)]
-# # # Show the plot
-# # plotter.show(jupyter_backend="static")
 # -
 
 # The Inverse Code
@@ -98,11 +85,6 @@ checkpoint_file.close()
 
 tape = get_working_tape()
 tape.clear_tape()
-
-# + tags=["active-ipynb"]
-# # To verify the tape is empty, we can print all blocks:
-# print(tape.get_blocks())
-# -
 
 # From here on, all user operations are specified with minimal differences relative to
 # to our forward code. Under the hood, however, the tape will be populated
@@ -149,12 +131,8 @@ temp_bcs = {
 
 # Setup Energy and Stokes solver
 energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs)
-# energy_solver.solver_parameters['ksp_converged_reason'] = None
-# energy_solver.solver_parameters['ksp_view'] = None
 stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
                              nullspace=Z_nullspace, transpose_nullspace=Z_nullspace, constant_jacobian=True)
-# stokes_solver.solver_parameters['ksp_converged_reason'] = None
-# stokes_solver.solver_parameters['ksp_view'] = None
 # -
 
 # Specify Problem Length
@@ -196,7 +174,7 @@ T0_bcs = [DirichletBC(Q1, 0., boundary.top), DirichletBC(Q1, 1., boundary.bottom
 T0 = Function(Q1, name="Initial_Guess_Temperature").project(Tic, bcs=T0_bcs)
 
 # We next make pyadjoint aware of our control problem:
-control = Control(Tic)
+control = Control(Tic, riesz_map="l2")
 
 # Take our initial guess and project to T, simultaneously applying boundary conditions in the Q2 space:
 T.project(Tic, bcs=energy_solver.strong_bcs)
@@ -277,10 +255,10 @@ alpha_s = 1e-3
 # Define overall objective functional:
 objective = (
     t_misfit 
-    # +
-    # alpha_u * (norm_obs * u_misfit / timesteps / norm_u_surface) +
-    # alpha_d * (norm_obs * damping / norm_damping) +
-    # alpha_s * (norm_obs * smoothing / norm_smoothing)
+    +
+    alpha_u * (norm_obs * u_misfit / timesteps / norm_u_surface) +
+    alpha_d * (norm_obs * damping / norm_damping) +
+    alpha_s * (norm_obs * smoothing / norm_smoothing)
 )
 # -
 
@@ -295,7 +273,7 @@ print(type(t_misfit))
 #
 # To define the reduced functional, we provide the class with an objective (which is an overloaded UFL object) and the control.
 
-rf = ReducedFunctional(objective, control)
+rf = L2TransformedFunctional(objective, control, alpha=1)
 
 # At this point, we have completed annotating the tape with the necessary information from running the forward simulation.
 # To prevent further annotations during subsequent operations, we stop the annotation process. This ensures that no additional
@@ -308,50 +286,6 @@ pause_annotation()
 # + tags=["active-ipynb"]
 # # print(tape.get_blocks())
 # -
-
-# Verification of Gradients: Taylor Remainder Convergence Test
-# ------------------------------------------------------------
-#
-# A fundamental tool for verifying gradients is the Taylor remainder convergence test. This test helps ensure that
-# the gradients computed by our optimisation algorithm are accurate. For the reduced functional, $J(T_{ic})$, and its derivative,
-# $\frac{\mathrm{d} J}{\mathrm{d} T_{ic}}$, the Taylor remainder convergence test can be expressed as:
-#
-# $$ \left| J(T_{ic} + h \,\delta T_{ic}) - J(T_{ic}) - h\,\frac{\mathrm{d} J}{\mathrm{d} T_{ic}} \cdot \delta T_{ic} \right| \longrightarrow 0 \text{ at } O(h^2). $$
-#
-# The expression on the left-hand side is termed the second-order Taylor remainder. This term's convergence rate of $O(h^2)$ is a robust indicator for
-# verifying the computational implementation of the gradient calculation. Essentially, if you halve the value of $h$, the magnitude
-# of the second-order Taylor remainder should decrease by a factor of 4.
-#
-# We employ these so-called *Taylor tests* to confirm the accuracy of the determined gradients. The theoretical convergence rate is
-# $O(2.0)$, and achieving this rate indicates that the gradient information is accurate down to floating-point precision.
-#
-# ### Performing Taylor Tests
-#
-# In our implementation, we perform a second-order Taylor remainder test for each term of the objective functional. The test involves
-# computing the functional and the associated gradient when randomly perturbing the initial temperature field, $T_{ic}$, and subsequently
-# halving the perturbations at each level.
-#
-# Here is how you can perform a Taylor test in the code:
-
-# + tags=["active-ipynb"]
-# # # Define the perturbation in the initial temperature field
-# # import numpy as np
-# # Delta_temp = Function(Tic.function_space(), name="Delta_Temperature")
-# # Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
-#
-# # # Perform the Taylor test to verify the gradients
-# # minconv = taylor_test(reduced_functional, Tic, Delta_temp)
-# -
-
-# The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
-# that our gradients are accurate and reliable for optimisation.
-
-gradJ = rf.derivative(options={"riesz_representation": "L2"})
-
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots()
-collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-fig.colorbar(collection);
 
 # Running the inversion
 # ---------------------
@@ -373,192 +307,133 @@ T_ub.assign(1.0)
 # Define the minimisation problem, with the goal to minimise the reduced functional
 # Note: in some scenarios, the goal might be to maximise (rather than minimise) the functional.
 minimisation_problem = MinimizationProblem(rf, bounds=(T_lb, T_ub))
-
-# +
-# from scipy.optimize import minimize
-# import inspect
-
-# def callback(intermediate_result):
-#     sf = inspect.stack()[3].frame.f_locals["sf"]
-#     print(f"{intermediate_result.fun=}")
-#     print(f"{sf.nfev=}, {sf.ngev=}")
-
-# # Define the minimisation problem, with the goal to minimise the reduced functional
-# # Note: in some scenarios, the goal might be to maximise (rather than minimise) the functional.
-# options = { 'maxcor': 10, # The maximum number of variable metric corrections (memory)
-#             'ftol': 1e7* np.finfo(float).eps,# 1e14 for low accuracy, 1e7 for mid-accuracy, 10 for high accuracy
-#             'gtol': 0,#1e-5, # Iteration stops if projection of gradient is smaller than this
-#             'eps': 1e-8, # Only used when approx grad is True
-#             'maxfun': 15000, # Maximum number of evaluations
-#             'maxiter': 5, # Maximum number of iterations
-#             'maxls': 20, # Maximum number of line-searth steps
-#         }
-
-# # Setting up the problem using minimize that uses Scipy
-# sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
 # ## Using Scipy minimize
 
 # +
-import datetime
-import time
-
-
-solutions_vtk = VTKFile("solutions_adjoint_test_10_iter_only_misfit_Scipy.pvd")
-solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
-solution_final = Function(T.function_space(), name="Final_Temperature")  
-functional_values = []
-initial_misfit_values = []
-final_misfit_values = []
-counter_hess = 0
-counter_func = 0
-counter_grad = 0
-start_time_hess = 0
-start_time_func = 0
-start_time_grad = 0
-elapsed_time_hess = 0
-elapsed_time_func = 0
-elapsed_time_grad = 0
+# import datetime
+# import time
+# functional_values = []
+# initial_misfit_values = []
+# final_misfit_values = []
+# counter_hess = 0
+# counter_func = 0
+# counter_grad = 0
+# start_time_hess = 0
+# start_time_func = 0
+# start_time_grad = 0
+# elapsed_time_hess = 0
+# elapsed_time_func = 0
+# elapsed_time_grad = 0
 iteration = 0
 
-# Profiling
-def record_pre_hess(*args):
-    global counter_hess
-    global start_time_hess
-    counter_hess = counter_hess + 1
-    start_time_hess = datetime.datetime.now()
-    start_time_hess_disp = start_time_hess.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    log(f"Hessian calculation started with count: {counter_hess} at time: {start_time_hess_disp}")
+# # Profiling
+# def record_pre_hess(*args):
+#     global counter_hess
+#     global start_time_hess
+#     counter_hess = counter_hess + 1
+#     start_time_hess = datetime.datetime.now()
+#     start_time_hess_disp = start_time_hess.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     log(f"Hessian calculation started with count: {counter_hess} at time: {start_time_hess_disp}")
 
-def record_post_hess(*args):
-    global counter_hess
-    global start_time_hess
-    global elapsed_time_hess
-    end_time_hess = datetime.datetime.now()
-    elapsed_time = end_time_hess-start_time_hess
-    elapsed_time_hess = elapsed_time_hess + elapsed_time.total_seconds()
-    end_time_hess_disp = end_time_hess.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    total_seconds = int(elapsed_time.total_seconds())
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-    log(f"Hessian calculation finished with count: {counter_hess} at time: {end_time_hess_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
+# def record_post_hess(*args):
+#     global counter_hess
+#     global start_time_hess
+#     global elapsed_time_hess
+#     end_time_hess = datetime.datetime.now()
+#     elapsed_time = end_time_hess-start_time_hess
+#     elapsed_time_hess = elapsed_time_hess + elapsed_time.total_seconds()
+#     end_time_hess_disp = end_time_hess.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     total_seconds = int(elapsed_time.total_seconds())
+#     hours = total_seconds // 3600
+#     minutes = (total_seconds % 3600) // 60
+#     seconds = total_seconds % 60
+#     log(f"Hessian calculation finished with count: {counter_hess} at time: {end_time_hess_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
 
-def record_pre_func(*args):
-    global counter_func
-    global start_time_func
-    counter_func = counter_func + 1
-    start_time_func = datetime.datetime.now()
-    start_time_func_disp = start_time_func.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    log(f"Functional calculation started with count: {counter_func} at time: {start_time_func_disp}")
+# def record_pre_func(*args):
+#     global counter_func
+#     global start_time_func
+#     counter_func = counter_func + 1
+#     start_time_func = datetime.datetime.now()
+#     start_time_func_disp = start_time_func.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     log(f"Functional calculation started with count: {counter_func} at time: {start_time_func_disp}")
 
-def record_post_func(func_value, *args):
-    global start_time_func
-    global elapsed_time_func
-    end_time_func = datetime.datetime.now()
-    elapsed_time = end_time_func-start_time_func
-    elapsed_time_func = elapsed_time_func + elapsed_time.total_seconds()
-    end_time_func_disp = end_time_func.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    total_seconds = int(elapsed_time.total_seconds())
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-    log(f"Functional calculation finished with count: {counter_func} at time: {end_time_func_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
-    functional_values.append(func_value)
+# def record_post_func(func_value, *args):
+#     global start_time_func
+#     global elapsed_time_func
+#     end_time_func = datetime.datetime.now()
+#     elapsed_time = end_time_func-start_time_func
+#     elapsed_time_func = elapsed_time_func + elapsed_time.total_seconds()
+#     end_time_func_disp = end_time_func.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     total_seconds = int(elapsed_time.total_seconds())
+#     hours = total_seconds // 3600
+#     minutes = (total_seconds % 3600) // 60
+#     seconds = total_seconds % 60
+#     log(f"Functional calculation finished with count: {counter_func} at time: {end_time_func_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
+#     functional_values.append(func_value)
 
-def record_pre_grad(controls, *args):
-    global start_time_grad
-    global counter_grad
-    counter_grad = counter_grad + 1
-    start_time_grad = datetime.datetime.now()
-    start_time_grad_disp = start_time_grad.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    log(f"Gradient calculation started with count: {counter_grad} at time: {start_time_grad_disp}")
-    return controls
+# def record_pre_grad(controls, *args):
+#     global start_time_grad
+#     global counter_grad
+#     counter_grad = counter_grad + 1
+#     start_time_grad = datetime.datetime.now()
+#     start_time_grad_disp = start_time_grad.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     log(f"Gradient calculation started with count: {counter_grad} at time: {start_time_grad_disp}")
+#     return controls
 
-def record_post_grad(checkpoint, derivatives, values, *args):
-    global start_time_grad
-    global elapsed_time_grad
-    end_time_grad = datetime.datetime.now()
-    elapsed_time = end_time_grad-start_time_grad
-    elapsed_time_grad = elapsed_time_grad + elapsed_time.total_seconds()
-    end_time_grad_disp = end_time_grad.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    total_seconds = int(elapsed_time.total_seconds())
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-    log(f"Gradient calculation finished with count: {counter_grad} at time: {end_time_grad_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
-    return derivatives
+# def record_post_grad(checkpoint, derivatives, values, *args):
+#     global start_time_grad
+#     global elapsed_time_grad
+#     end_time_grad = datetime.datetime.now()
+#     elapsed_time = end_time_grad-start_time_grad
+#     elapsed_time_grad = elapsed_time_grad + elapsed_time.total_seconds()
+#     end_time_grad_disp = end_time_grad.strftime("%a, %b %d, %Y %I:%M:%S %p")
+#     total_seconds = int(elapsed_time.total_seconds())
+#     hours = total_seconds // 3600
+#     minutes = (total_seconds % 3600) // 60
+#     seconds = total_seconds % 60
+#     log(f"Gradient calculation finished with count: {counter_grad} at time: {end_time_grad_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
+#     return derivatives
 
-# Log values of initial and final misfit:
-def record_misfit_values(init_misfit, final_misfit):
-    initial_misfit_values.append(init_misfit)
-    final_misfit_values.append(final_misfit)
+# # Log values of initial and final misfit:
+# def record_misfit_values(init_misfit, final_misfit):
+#     initial_misfit_values.append(init_misfit)
+#     final_misfit_values.append(final_misfit)
 
+# rf.eval_cb_pre = record_pre_func
+# rf.eval_cb_post = record_post_func
+# rf.derivative_cb_pre = record_pre_grad
+# rf.derivative_cb_post = record_post_grad
+# rf.hessian_cb_pre = record_pre_hess
+# rf.hessian_cb_post = record_post_hess
+
+functional_file = "functional_scipy.txt"
+solutions_vtk = VTKFile("solutions_scipy.pvd")
+solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
+solution_final = Function(T.function_space(), name="Final_Temperature")
 
 def callback(intermediate_result):
-    sf = inspect.stack()[3].frame.f_locals["sf"]
-    k = inspect.stack()[3].frame.f_locals["k"]
-    print(f"Iteration: {k:d} completed")
-    print(f"{intermediate_result.fun=}")
-    print(f"{sf.nfev=}, {sf.ngev=}, {sf.nhev=}")
-    global iteration
+    iteration = iteration + 1
     initial_misfit = assemble(
-    (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
+        (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
     )
     final_misfit = assemble(
-    (T.block_variable.checkpoint - Tobs) ** 2 * dx
+        (T.block_variable.checkpoint - Tobs) ** 2 * dx
     )
-    record_misfit_values(initial_misfit, final_misfit)
-    # Print output for ease of tracking simulation progress:
-    if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-        log(f"No Hessians, functionals and gradients calculated \n")
-    elif counter_hess == 0 and counter_grad == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0 ; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-    elif counter_hess == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-    else:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")  
-    # if functional_values:
-    #     log(f"Functional: {functional_values[-1]};  Misfit (IC): {initial_misfit};  Misfit (Final): {final_misfit}")
-    # else:
-    #     log(f"Functional value not recorded; Misfit (IC): {initial_misfit}; Misfit (Final): {final_misfit}")
-
-    # Write functional and misfit values to a file (appending to avoid overwriting)
-    if MPI.COMM_WORLD.Get_rank() == 0:        
-        with open("adjoint_test_10_iter_only_misfit_Scipy.txt", "a") as f:
-            f.write(f"Iteration: {iteration} \n")
-            if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-                f.write(f"No Hessians, functionals and gradients calculated \n")
-            elif counter_hess == 0 and counter_grad == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-            elif counter_hess == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            else:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            # if functional_values:            
-            #     f.write(f"Functional value: {functional_values[-1]}, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
-            # else:
-            #         f.write(f"Functional value: 0.0, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
-
-    iteration = iteration + 1
-    # Write VTK output:
+    sf = inspect.stack()[3].frame.f_locals["sf"]
+    log(f"{intermediate_result.fun=}")
+    log(f"{sf.nfev=}, {sf.ngev=}")
+    if MPI.COMM_WORLD.Get_rank() == 0:
+        with open(functional_file, "a") as file:
+            file.write(f"Iteration: {its} | Functional: {intermediate_result.fun} | Function evaluations: {sf.nfev} | Gradient evaluations: {sf.ngev} | Initial Misfit: {initial_misfit} | Final Misfit: {final_misfit} \n")
     solution_IC.assign(Tic.block_variable.checkpoint)
     solution_final.assign(T.block_variable.checkpoint)        
-    solutions_vtk.write(solution_IC, solution_final)
-    iteration = iteration + 1
+    solutions_vtk.write(solution_IC, solution_final)       
 
-rf.eval_cb_pre = record_pre_func
-rf.eval_cb_post = record_post_func
-rf.derivative_cb_pre = record_pre_grad
-rf.derivative_cb_post = record_post_grad
-rf.hessian_cb_pre = record_pre_hess
-rf.hessian_cb_post = record_post_hess
-
-# algo = scipy_minimize(method='trust-krylov', **kwargs)
 # Setting up the problem using minimize that uses Scipy
-print(f"Iteration: 0 completed")
-sol = minimize(rf, method = 'L-BFGS-B', bounds=(T_lb, T_ub), tol=1e-12, callback=callback, options={"disp": True, "maxiter": 2})
+# print(f"Iteration: 0 completed")
+sol = minimize(ReducedFunctionalNumPy(rf), method = 'L-BFGS-B', bounds=None, tol=1e-12, callback=callback, options={"disp": True, "maxiter": 2})
 # -
 
 

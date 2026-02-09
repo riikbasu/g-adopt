@@ -398,9 +398,17 @@ import datetime
 import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 20
+minimisation_parameters["Status Test"]["Iteration Limit"] = 200
 minimisation_parameters["Step"]["Trust Region"] = {
-    "Subproblem Solver": {"Type": "Cauchy Point"}
+    "Subproblem Solver": "Cauchy Point",
+    "Radius Shrinking Threshold": 0.15,
+    "Radius Growing Threshold": 0.65,
+    "Radius Shrinking Rate (Negative rho)": 0.03125,
+    "Radius Shrinking Rate (Positive rho)": 0.125,
+    "Radius Growing Rate": 5
+}
+minimisation_parameters["General"]["Secant"] = {
+    "Use as Preconditioner": True
 }
 # minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
 # try:

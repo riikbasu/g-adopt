@@ -12,7 +12,7 @@ import pandas as pd
 
 # %%
 # Change these inputs
-filename = 'N_K_testing.csv'
+filename = '/home/135/rb0141/g-adopt/demos/mantle_convection/adjoint/N_K_testing.csv'
 
 # df = pd.read_csv(filename)
 # #checking the number of empty rows in th csv file
@@ -38,7 +38,7 @@ with open(filename) as csv_file:
                     rel_tol = row[4]
                     iterations = row[5]
                     functional_file = 'functional_NK_tests_' + str(parameter_set) + '.txt'
-                    subprocess.run(['python', 'adjoint_NK_batch_test_5_timsesteps.py', functional_file, parameter_set, line_search_type, curvature_condition, abs_tol, rel_tol, iterations])
+                    subprocess.run(['python', '/home/135/rb0141/g-adopt/demos/mantle_convection/adjoint/adjoint_NK_batch_test_5_timsesteps.py', functional_file, parameter_set, line_search_type, curvature_condition, abs_tol, rel_tol, iterations])
                     # print(line_count, functional_file, iteration_limit, initial_radius, radius_growing_rate, radius_shrinking_rate_negative_rho, radius_shrinking_rate_positive_rho, radius_shrinking_threshold, radius_growing_threshold)
                     # print(f'Processed parameter set{line_count}')
                     line_count += 1

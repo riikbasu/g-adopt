@@ -16,6 +16,8 @@
 # checkpoint file on our servers.  These fields serve as benchmarks for evaluating our inverse problem's performance. To
 # download the reference benchmark checkpoint file if it doesn't already exist, execute the following command:
 
+
+
 # + tags=["active-ipynb"]
 # ![ ! -f adjoint-demo-checkpoint-state.h5 ] && wget https://data.gadopt.org/demos/adjoint-demo-checkpoint-state.h5
 # -
@@ -28,7 +30,7 @@
 from gadopt import *
 from gadopt.inverse import *
 # Open the checkpoint file and subsequently load the mesh:
-checkpoint_filename = "adjoint-demo-checkpoint-state.h5"
+checkpoint_filename = "adjoint-demo-checkpoint-state-test.h5"
 checkpoint_file = CheckpointFile(checkpoint_filename, mode="r")
 mesh = checkpoint_file.load_mesh("firedrake_default_extruded")
 mesh.cartesian = True
@@ -145,15 +147,8 @@ temp_bcs = {
 
 # Setup Energy and Stokes solver
 energy_solver = EnergySolver(T, u, approximation, delta_t, ImplicitMidpoint, bcs=temp_bcs)
-stokes_solver = StokesSolver(
-    z,
-    T,
-    approximation,
-    bcs=stokes_bcs,
-    constant_jacobian=True,
-    nullspace=Z_nullspace,
-    transpose_nullspace=Z_nullspace,
-)
+stokes_solver = StokesSolver(z, T, approximation, bcs=stokes_bcs,
+                             nullspace=Z_nullspace, transpose_nullspace=Z_nullspace, constant_jacobian=True)
 # -
 
 # Specify Problem Length
@@ -165,7 +160,7 @@ stokes_solver = StokesSolver(
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-# initial_timestep = timesteps - 10
+# initial_timestep = timesteps - 2
 initial_timestep = 0
 
 # Define the Control Space
@@ -186,7 +181,15 @@ Q1 = FunctionSpace(mesh, "CG", 1)
 # Note that this layer average will later be used for the smoothing term in our objective functional.
 with CheckpointFile(checkpoint_filename, mode="r") as checkpoint_file:
     Taverage = checkpoint_file.load_function(mesh, "Average_Temperature", idx=initial_timestep)
-Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
+# Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
+
+# Reassign Tic with the new state
+new_checkpoint_filename = 'adjoint-demo-checkpoint-state-bad.h5'
+new_checkpoint_file = CheckpointFile(new_checkpoint_filename, mode="r")
+new_temperature_timestepping_info = new_checkpoint_file.get_timestepping_history(mesh, "Temperature")
+Tic = new_checkpoint_file.load_function(mesh, "Temperature", idx=int(new_temperature_timestepping_info["index"][-1]))
+Tic.rename("Initial_Condition_Temperature")
+new_checkpoint_file.close()
 
 # Given that Tic will be updated during the optimisation, we also create a function to store our initial guess,
 # which we will later use for smoothing. Note that since smoothing is executed in the control space, we must
@@ -344,12 +347,15 @@ pause_annotation()
 # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
 # that our gradients are accurate and reliable for optimisation.
 
-gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
+# +
+# gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
 
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots()
-collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-fig.colorbar(collection);
+# +
+# import matplotlib.pyplot as plt
+# fig, axes = plt.subplots()
+# collection = tripcolor(gradJ, axes=axes, cmap='viridis')
+# fig.colorbar(collection);
+# -
 
 # Running the inversion
 # ---------------------
@@ -396,30 +402,13 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
-# Using the Lin-Moré optimiser
-# ----------------------------
-#
-# In this tutorial, we employ the trust region method of Lin and Moré (1999) implemented in ROL (Rapid Optimization Library).
-# Lin-Moré is a truncated Newton method, which involves the repeated application of an iterative algorithm to approximately
-# solve Newton’s equations (Dembo and Steihaug, 1983).
-#
-# Lin-Moré effectively handles provided bound constraints by ensuring that variables remain within their specified bounds.
-# During each iteration, variables are classified into "active" and "inactive" sets. Variables at their bounds that do not
-# allow descent are considered active and are fixed during the iteration. The remaining variables, which can change without
-# violating the bounds, are inactive. These properties make the algorithm robust and efficient for solving bound-constrained
-# optimisation problems.
-#
-# For our solution of the optimisation problem we use the pre-defined paramters set in gadopt by using `minimsation_parameters`.
-# Here, we set the number of iterations to only 5, as opposed to the default 100. We also adjust the step-length for this problem,
-# by setting it to a lower value than our default.
-
-minimisation_parameters["Status Test"]["Iteration Limit"] = 100
+minimisation_parameters["Status Test"]["Iteration Limit"] = 200
 # minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
 # minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
 # minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
 # minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
 # minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
-# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
+# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.65
 
 # A notable feature of this optimisation approach in ROL is its checkpointing capability. For every iteration,
 # all information necessary to restart the optimisation from that iteration is saved in the specified `checkpoint_dir`.
@@ -445,7 +434,7 @@ optimiser = LinMoreOptimiser(
 import datetime
 import time
 
-solutions_vtk = VTKFile("solutions.pvd")
+solutions_vtk = VTKFile("solutions_LM_BAD.pvd")
 functional_values = []
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
@@ -533,9 +522,21 @@ def record_post_grad(checkpoint, derivatives, values, *args):
     return derivatives
 
 # Log values of initial and final misfit:
-def record_misfit_values(init_misfit, final_misfit):
-    initial_misfit_values.append(init_misfit)
-    final_misfit_values.append(final_misfit)
+# def record_misfit_values(init_misfit, final_misfit):
+#     initial_misfit_values.append(init_misfit)
+#     final_misfit_values.append(final_misfit)
+
+
+reduced_functional.eval_cb_pre = record_pre_func
+reduced_functional.eval_cb_post = record_post_func
+reduced_functional.derivative_cb_pre = record_pre_grad
+reduced_functional.derivative_cb_post = record_post_grad
+reduced_functional.hessian_cb_pre = record_pre_hess
+reduced_functional.hessian_cb_post = record_post_hess
+# record_misfit_values(initial_misfit, final_misfit)
+
+my_file = CheckpointFile("LM_checkpoint_default_params_BAD.h5", "w")
+my_file.save_mesh(mesh)
 
 
 def callback():
@@ -546,14 +547,6 @@ def callback():
     final_misfit = assemble(
         (T.block_variable.checkpoint - Tobs) ** 2 * dx
     )
-
-    reduced_functional.eval_cb_pre = record_pre_func
-    reduced_functional.eval_cb_post = record_post_func
-    reduced_functional.derivative_cb_pre = record_pre_grad
-    reduced_functional.derivative_cb_post = record_post_grad
-    reduced_functional.hessian_cb_pre = record_pre_hess
-    reduced_functional.hessian_cb_post = record_post_hess
-    record_misfit_values(initial_misfit, final_misfit)
     
     # Print output for ease of tracking simulation progress:
     if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
@@ -571,7 +564,7 @@ def callback():
 
     # Write functional and misfit values to a file (appending to avoid overwriting)
     if MPI.COMM_WORLD.Get_rank() == 0:        
-        with open("functional.txt", "a") as f:
+        with open("functional_LM_BAD.txt", "a") as f:
             f.write(f"Iteration: {iteration} \n")
             if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
                 f.write(f"No Hessians, functionals and gradients calculated \n")
@@ -590,6 +583,9 @@ def callback():
     solution_IC.assign(Tic.block_variable.checkpoint)
     solution_final.assign(T.block_variable.checkpoint)        
     solutions_vtk.write(solution_IC, solution_final)
+    # Write checkpoint
+    my_file.save_function(solution_IC, name="Initial Temperature", idx=iteration,
+                                timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
     iteration = iteration + 1
 
 optimiser.add_callback(callback)

@@ -397,10 +397,17 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 import datetime
 import time
 
-minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 20
+minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub)) 
+minimisation_parameters["Status Test"]["Iteration Limit"] = 10
+minimisation_parameters["General"]["Krylov"] = {
+    "Absolute Tolerance": 1e-1,
+    "Relative Tolerance": 1e-1,
+    "Iteration Limit": 10    
+}
 minimisation_parameters["Step"]["Line Search"] = {
-  "Descent Method": {"Type": "Newton-Krylov"}
+    "Line-Search Method": {"Type": 'Cubic Interpolation'},
+    "Descent Method": {"Type": "Newton-Krylov"},
+    "Curvature Condition": {"Type": 'Strong Wolfe Conditions'}
 }
 # minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
 # try:
@@ -412,7 +419,7 @@ rol_solver = ROLSolver(minimisation_problem, minimisation_parameters, inner_prod
 rol_params = ROL.ParameterList(minimisation_parameters, "Parameters")
 rol_algorithm = ROL.LineSearchAlgorithm(rol_params)
 
-solutions_vtk = VTKFile("solutions_NK.pvd")
+solutions_vtk = VTKFile("solutions_NK_opt.pvd")
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
 functional_values = []
@@ -539,7 +546,7 @@ class StatusTest(ROL.StatusTest):
 
         # Write functional and misfit values to a file (appending to avoid overwriting)
         if MPI.COMM_WORLD.Get_rank() == 0:        
-            with open("functional_NK.txt", "a") as f:
+            with open("functional_NK_opt.txt", "a") as f:
                 f.write(f"Iteration: {iteration} \n")
                 if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
                     f.write(f"No Hessians, functionals and gradients calculated \n")

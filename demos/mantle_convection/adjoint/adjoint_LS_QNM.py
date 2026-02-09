@@ -339,12 +339,12 @@ pause_annotation()
 # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
 # that our gradients are accurate and reliable for optimisation.
 
-gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
+# gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
 
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots()
-collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-fig.colorbar(collection);
+# import matplotlib.pyplot as plt
+# fig, axes = plt.subplots()
+# collection = tripcolor(gradJ, axes=axes, cmap='viridis')
+# fig.colorbar(collection);
 
 # Running the inversion
 # ---------------------
@@ -398,9 +398,17 @@ import datetime
 import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 20
+minimisation_parameters["Status Test"]["Iteration Limit"] = 200
 minimisation_parameters["Step"]["Line Search"] = {
-  "Descent Method": {"Type": "Quasi-Newton Method"}
+    "Line-Search Method": {"Type": "Cubic Interpolation"},
+    # "Curvature Condition": {"Type": curvature_condition},
+    "Descent Method": {"Type": "Quasi-Newton Method"},
+    "Initial Step Size" : 1.5,
+    "User Defined Initial Step Size" : True,
+    # "Use Previous Step Length as Initial Guess": True,
+    # "Accept Linesearch Minimizer": True,
+    "Sufficient Decrease Tolerance": 1e-7,
+    "Curvature Condition": {"General Parameter": 0.9},
 }
 # minimisation_parameters["General"]["Secant"]["Type"] = "Limited-Memory BFGS"
 # try:
@@ -539,7 +547,7 @@ class StatusTest(ROL.StatusTest):
 
         # Write functional and misfit values to a file (appending to avoid overwriting)
         if MPI.COMM_WORLD.Get_rank() == 0:        
-            with open("functional_LS_QNM.txt", "a") as f:
+            with open("functional_LS_QNM_test.txt", "a") as f:
                 f.write(f"Iteration: {iteration} \n")
                 if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
                     f.write(f"No Hessians, functionals and gradients calculated \n")

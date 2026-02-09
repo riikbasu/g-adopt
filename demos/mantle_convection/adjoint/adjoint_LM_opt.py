@@ -28,7 +28,7 @@
 from gadopt import *
 from gadopt.inverse import *
 # Open the checkpoint file and subsequently load the mesh:
-checkpoint_filename = "adjoint-demo-checkpoint-state.h5"
+checkpoint_filename = "adjoint-demo-checkpoint-state-highres.h5"
 checkpoint_file = CheckpointFile(checkpoint_filename, mode="r")
 mesh = checkpoint_file.load_mesh("firedrake_default_extruded")
 mesh.cartesian = True
@@ -337,12 +337,12 @@ pause_annotation()
 # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
 # that our gradients are accurate and reliable for optimisation.
 
-gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
+# gradJ = reduced_functional.derivative(optibons={"riesz_representation": "L2"})
 
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots()
-collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-fig.colorbar(collection);
+# import matplotlib.pyplot as plt
+# fig, axes = plt.subplots()
+# collection = tripcolor(gradJ, axes=axes, cmap='viridis')
+# fig.colorbar(collection);
 
 # Running the inversion
 # ---------------------
@@ -406,13 +406,13 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # Here, we set the number of iterations to only 5, as opposed to the default 100. We also adjust the step-length for this problem,
 # by setting it to a lower value than our default.
 
-minimisation_parameters["Status Test"]["Iteration Limit"] = 40
+minimisation_parameters["Status Test"]["Iteration Limit"] = 200
 minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
 minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
 minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
 minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
 minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
-minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
+minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.65
 
 # A notable feature of this optimisation approach in ROL is its checkpointing capability. For every iteration,
 # all information necessary to restart the optimisation from that iteration is saved in the specified `checkpoint_dir`.
@@ -438,7 +438,7 @@ optimiser = LinMoreOptimiser(
 import datetime
 import time
 
-solutions_vtk = VTKFile("solutions_LM_opt.pvd")
+solutions_vtk = VTKFile("solutions_LM_opt_highres.pvd")
 functional_values = []
 solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
 solution_final = Function(T.function_space(), name="Final_Temperature")    
@@ -526,9 +526,21 @@ def record_post_grad(checkpoint, derivatives, values, *args):
     return derivatives
 
 # Log values of initial and final misfit:
-def record_misfit_values(init_misfit, final_misfit):
-    initial_misfit_values.append(init_misfit)
-    final_misfit_values.append(final_misfit)
+# def record_misfit_values(init_misfit, final_misfit):
+#     initial_misfit_values.append(init_misfit)
+#     final_misfit_values.append(final_misfit)
+
+
+reduced_functional.eval_cb_pre = record_pre_func
+reduced_functional.eval_cb_post = record_post_func
+reduced_functional.derivative_cb_pre = record_pre_grad
+reduced_functional.derivative_cb_post = record_post_grad
+reduced_functional.hessian_cb_pre = record_pre_hess
+reduced_functional.hessian_cb_post = record_post_hess
+# record_misfit_values(initial_misfit, final_misfit)
+
+my_file = CheckpointFile("LM_checkpoint_default_highres.h5", "w")
+my_file.save_mesh(mesh)
 
 
 def callback():
@@ -539,14 +551,6 @@ def callback():
     final_misfit = assemble(
         (T.block_variable.checkpoint - Tobs) ** 2 * dx
     )
-
-    reduced_functional.eval_cb_pre = record_pre_func
-    reduced_functional.eval_cb_post = record_post_func
-    reduced_functional.derivative_cb_pre = record_pre_grad
-    reduced_functional.derivative_cb_post = record_post_grad
-    reduced_functional.hessian_cb_pre = record_pre_hess
-    reduced_functional.hessian_cb_post = record_post_hess
-    record_misfit_values(initial_misfit, final_misfit)
     
     # Print output for ease of tracking simulation progress:
     if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
@@ -564,7 +568,7 @@ def callback():
 
     # Write functional and misfit values to a file (appending to avoid overwriting)
     if MPI.COMM_WORLD.Get_rank() == 0:        
-        with open("functional_LM_opt.txt", "a") as f:
+        with open("functional_LM_opt_highres.txt", "a") as f:
             f.write(f"Iteration: {iteration} \n")
             if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
                 f.write(f"No Hessians, functionals and gradients calculated \n")
@@ -583,6 +587,9 @@ def callback():
     solution_IC.assign(Tic.block_variable.checkpoint)
     solution_final.assign(T.block_variable.checkpoint)        
     solutions_vtk.write(solution_IC, solution_final)
+    # Write checkpoint
+    my_file.save_function(solution_IC, name="Initial Temperature", idx=iteration,
+                                timestepping_info={"index": float(iteration), "delta_t": float(delta_t)})
     iteration = iteration + 1
 
 optimiser.add_callback(callback)

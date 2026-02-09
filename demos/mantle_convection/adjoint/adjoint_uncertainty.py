@@ -27,6 +27,7 @@
 # +
 from gadopt import *
 from gadopt.inverse import *
+
 # Open the checkpoint file and subsequently load the mesh:
 checkpoint_filename = "adjoint-demo-checkpoint-state.h5"
 checkpoint_file = CheckpointFile(checkpoint_filename, mode="r")
@@ -65,7 +66,7 @@ checkpoint_file.close()
 # These fields can be visualised using standard VTK software, such as Paraview or pyvista.
 
 # + tags=["active-ipynb"]
-# import pyvista as pv
+# # import pyvista as pv
 # VTKFile("./visualisation_vtk.pvd").write(Tobs, Tic_ref)
 # # dataset = pv.read('./visualisation_vtk.pvd')
 # # # Create a plotter object
@@ -109,7 +110,7 @@ tape.clear_tape()
 # Set up function spaces:
 V = VectorFunctionSpace(mesh, "CG", 2)  # Velocity function space (vector)
 W = FunctionSpace(mesh, "CG", 1)  # Pressure function space (scalar)
-Q = FunctionSpace(mesh, "DQ", 2)  # Temperature function space (scalar)
+Q = FunctionSpace(mesh, "DQ", 2)  # Temperature function space (DQ; scalar)
 Z = MixedFunctionSpace([V, W])  # Mixed function space
 
 # Specify test functions and functions to hold solutions:
@@ -165,7 +166,6 @@ stokes_solver = StokesSolver(
 # To run for the simulation's full duration, change the initial_timestep to `0` below, rather than
 # `timesteps - 10`.
 
-# initial_timestep = timesteps - 10
 initial_timestep = 0
 
 # Define the Control Space
@@ -269,8 +269,8 @@ norm_u_surface = assemble(dot(uobs, uobs) * ds_t)
 t_misfit = assemble((T - Tobs) ** 2 * dx)
 
 # Weighting terms
-alpha_u = 1e-2
-alpha_d = 1e-4
+alpha_u = 1e-1
+alpha_d = 1e-3
 alpha_s = 1e-3
 
 # Define overall objective functional:
@@ -281,8 +281,6 @@ objective = (
     alpha_s * (norm_obs * smoothing / norm_smoothing)
 )
 # -
-
-print(type(t_misfit))
 
 # Define the Reduced Functional
 # -----------------------------
@@ -304,7 +302,7 @@ pause_annotation()
 # We can print the contents of the tape at this stage to verify that it is not empty.
 
 # + tags=["active-ipynb"]
-# # print(tape.get_blocks())
+# print(tape.get_blocks())
 # -
 
 # Verification of Gradients: Taylor Remainder Convergence Test
@@ -332,7 +330,7 @@ pause_annotation()
 # Here is how you can perform a Taylor test in the code:
 
 # + tags=["active-ipynb"]
-# # # Define the perturbation in the initial temperature field
+# # Define the perturbation in the initial temperature field
 # # import numpy as np
 # # Delta_temp = Function(Tic.function_space(), name="Delta_Temperature")
 # # Delta_temp.dat.data[:] = np.random.random(Delta_temp.dat.data.shape)
@@ -343,13 +341,6 @@ pause_annotation()
 
 # The `taylor_test` function computes the Taylor remainder and verifies that the convergence rate is close to the theoretical value of $O(2.0)$. This ensures
 # that our gradients are accurate and reliable for optimisation.
-
-gradJ = reduced_functional.derivative(options={"riesz_representation": "L2"})
-
-import matplotlib.pyplot as plt
-fig, axes = plt.subplots()
-collection = tripcolor(gradJ, axes=axes, cmap='viridis')
-fig.colorbar(collection);
 
 # Running the inversion
 # ---------------------
@@ -371,29 +362,6 @@ T_ub.assign(1.0)
 # Define the minimisation problem, with the goal to minimise the reduced functional
 # Note: in some scenarios, the goal might be to maximise (rather than minimise) the functional.
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-
-# +
-# from scipy.optimize import minimize
-# import inspect
-
-# def callback(intermediate_result):
-#     sf = inspect.stack()[3].frame.f_locals["sf"]
-#     print(f"{intermediate_result.fun=}")
-#     print(f"{sf.nfev=}, {sf.ngev=}")
-
-# # Define the minimisation problem, with the goal to minimise the reduced functional
-# # Note: in some scenarios, the goal might be to maximise (rather than minimise) the functional.
-# options = { 'maxcor': 10, # The maximum number of variable metric corrections (memory)
-#             'ftol': 1e7* np.finfo(float).eps,# 1e14 for low accuracy, 1e7 for mid-accuracy, 10 for high accuracy
-#             'gtol': 0,#1e-5, # Iteration stops if projection of gradient is smaller than this
-#             'eps': 1e-8, # Only used when approx grad is True
-#             'maxfun': 15000, # Maximum number of evaluations
-#             'maxiter': 5, # Maximum number of iterations
-#             'maxls': 20, # Maximum number of line-searth steps
-#         }
-
-# # Setting up the problem using minimize that uses Scipy
-# sol = minimize(J, m_global, bounds=bounds, method="L-BFGS-B", tol=1e-12, callback=callback, options = options)
 # -
 
 # Using the Lin-Moré optimiser
@@ -413,13 +381,8 @@ minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_u
 # Here, we set the number of iterations to only 5, as opposed to the default 100. We also adjust the step-length for this problem,
 # by setting it to a lower value than our default.
 
-minimisation_parameters["Status Test"]["Iteration Limit"] = 100
-# minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 0.1
-# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Rate"] = 5
-# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Negative rho)"] = 0.03125
-# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Rate (Positive rho)"] = 0.125
-# minimisation_parameters["Step"]["Trust Region"]["Radius Shrinking Threshold"] = 0.15
-# minimisation_parameters["Step"]["Trust Region"]["Radius Growing Threshold"] = 0.75
+minimisation_parameters["Status Test"]["Iteration Limit"] = 10
+minimisation_parameters["Step"]["Trust Region"]["Initial Radius"] = 1e-2
 
 # A notable feature of this optimisation approach in ROL is its checkpointing capability. For every iteration,
 # all information necessary to restart the optimisation from that iteration is saved in the specified `checkpoint_dir`.
@@ -442,163 +405,38 @@ optimiser = LinMoreOptimiser(
 # functional directly in order to produce a plot of the convergence.
 
 # +
-import datetime
-import time
-
 solutions_vtk = VTKFile("solutions.pvd")
+solution_container = Function(Tic.function_space(), name="Solutions")
 functional_values = []
-solution_IC = Function(Tic.function_space(), name="Initial_Temperature")
-solution_final = Function(T.function_space(), name="Final_Temperature")    
-functional_values = []
-initial_misfit_values = []
-final_misfit_values = []
-counter_hess = 0
-counter_func = 0
-counter_grad = 0
-start_time_hess = 0
-start_time_func = 0
-start_time_grad = 0
-elapsed_time_hess = 0
-elapsed_time_func = 0
-elapsed_time_grad = 0
-iteration = 0
-
-# Profiling
-# Profiling
-def record_pre_hess(*args):
-    global counter_hess
-    global start_time_hess
-    counter_hess = counter_hess + 1
-    start_time_hess = datetime.datetime.now()
-    start_time_hess_disp = start_time_hess.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    log(f"Hessian calculation started with count: {counter_hess} at time: {start_time_hess_disp}")
-
-def record_post_hess(*args):
-    global counter_hess
-    global start_time_hess
-    global elapsed_time_hess
-    end_time_hess = datetime.datetime.now()
-    elapsed_time = end_time_hess-start_time_hess
-    elapsed_time_hess = elapsed_time_hess + elapsed_time.total_seconds()
-    end_time_hess_disp = end_time_hess.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    total_seconds = int(elapsed_time.total_seconds())
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-    log(f"Hessian calculation finished with count: {counter_hess} at time: {end_time_hess_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
-
-def record_pre_func(*args):
-    global counter_func
-    global start_time_func
-    counter_func = counter_func + 1
-    start_time_func = datetime.datetime.now()
-    start_time_func_disp = start_time_func.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    log(f"Functional calculation started with count: {counter_func} at time: {start_time_func_disp}")
-
-def record_post_func(func_value, *args):
-    global start_time_func
-    global elapsed_time_func
-    end_time_func = datetime.datetime.now()
-    elapsed_time = end_time_func-start_time_func
-    elapsed_time_func = elapsed_time_func + elapsed_time.total_seconds()
-    end_time_func_disp = end_time_func.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    total_seconds = int(elapsed_time.total_seconds())
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-    log(f"Functional calculation finished with count: {counter_func} at time: {end_time_func_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
-    functional_values.append(func_value)
-
-def record_pre_grad(controls, *args):
-    global start_time_grad
-    global counter_grad
-    counter_grad = counter_grad + 1
-    start_time_grad = datetime.datetime.now()
-    start_time_grad_disp = start_time_grad.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    log(f"Gradient calculation started with count: {counter_grad} at time: {start_time_grad_disp}")
-    return controls
-
-def record_post_grad(checkpoint, derivatives, values, *args):
-    global start_time_grad
-    global elapsed_time_grad
-    end_time_grad = datetime.datetime.now()
-    elapsed_time = end_time_grad-start_time_grad
-    elapsed_time_grad = elapsed_time_grad + elapsed_time.total_seconds()
-    end_time_grad_disp = end_time_grad.strftime("%a, %b %d, %Y %I:%M:%S %p")
-    total_seconds = int(elapsed_time.total_seconds())
-    hours = total_seconds // 3600
-    minutes = (total_seconds % 3600) // 60
-    seconds = total_seconds % 60
-    log(f"Gradient calculation finished with count: {counter_grad} at time: {end_time_grad_disp} and completed in: {hours:02}:{minutes:02}:{seconds:02}")
-    return derivatives
-
-# Log values of initial and final misfit:
-def record_misfit_values(init_misfit, final_misfit):
-    initial_misfit_values.append(init_misfit)
-    final_misfit_values.append(final_misfit)
 
 
 def callback():
-    global iteration
-    initial_misfit = assemble(
-        (Tic.block_variable.checkpoint - Tic_ref) ** 2 * dx
-    )
-    final_misfit = assemble(
+    solution_container.assign(Tic.block_variable.checkpoint)
+    solutions_vtk.write(solution_container)
+    final_temperature_misfit = assemble(
         (T.block_variable.checkpoint - Tobs) ** 2 * dx
     )
+    log(f"Terminal Temperature Misfit: {final_temperature_misfit}")
 
-    reduced_functional.eval_cb_pre = record_pre_func
-    reduced_functional.eval_cb_post = record_post_func
-    reduced_functional.derivative_cb_pre = record_pre_grad
-    reduced_functional.derivative_cb_post = record_post_grad
-    reduced_functional.hessian_cb_pre = record_pre_hess
-    reduced_functional.hessian_cb_post = record_post_hess
-    record_misfit_values(initial_misfit, final_misfit)
-    
-    # Print output for ease of tracking simulation progress:
-    if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-        log(f"No Hessians, functionals and gradients calculated \n")
-    elif counter_hess == 0 and counter_grad == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0 ; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-    elif counter_hess == 0:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-    else:
-        log(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")  
-    if functional_values:
-        log(f"Functional: {functional_values[-1]};  Misfit (IC): {initial_misfit};  Misfit (Final): {final_misfit}")
-    else:
-        log(f"Functional value not recorded; Misfit (IC): {initial_misfit}; Misfit (Final): {final_misfit}")
 
-    # Write functional and misfit values to a file (appending to avoid overwriting)
-    if MPI.COMM_WORLD.Get_rank() == 0:        
-        with open("functional.txt", "a") as f:
-            f.write(f"Iteration: {iteration} \n")
-            if counter_hess == 0 and counter_func == 0 and counter_grad == 0:
-                f.write(f"No Hessians, functionals and gradients calculated \n")
-            elif counter_hess == 0 and counter_grad == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: 0.0\n")
-            elif counter_hess == 0:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: 0.0; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            else:
-                f.write(f"Total Hessians: {counter_hess}, Hessian time avg: {elapsed_time_hess/counter_hess}; Total functionals: {counter_func}, Functional time avg: {elapsed_time_func/counter_func}; Total Gradients: {counter_grad}, Gradient time avg: {elapsed_time_grad/counter_grad}\n")
-            if functional_values:            
-                f.write(f"Functional value: {functional_values[-1]}, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
-            else:
-                f.write(f"Functional value: 0.0, Initial Misfit: {initial_misfit}, Final Misfit: {final_misfit}\n")
+def record_value(value, *args):
+    functional_values.append(value)
 
-    # Write VTK output:
-    solution_IC.assign(Tic.block_variable.checkpoint)
-    solution_final.assign(T.block_variable.checkpoint)        
-    solutions_vtk.write(solution_IC, solution_final)
-    iteration = iteration + 1
 
 optimiser.add_callback(callback)
+reduced_functional.eval_cb_post = record_value
 
 # If it existed, we could restore the optimisation from last checkpoint:
 # optimiser.restore()
 
 # Run the optimisation
 optimiser.run()
+
+# Write the functional values to a file
+with open("functional.txt", "w") as f:
+    f.write("\n".join(str(x) for x in functional_values))
+
+
 # -
 
 # At this point a total number of 5 iterations are performed. For the example
@@ -609,7 +447,7 @@ optimiser.run()
 
 # + tags=["active-ipynb"]
 # # import pyvista as pv
-# # VTKFile("./solution.pvd").write(optimiser.rol_solver.rolvector.dat[0])
+# VTKFile("./solution.pvd").write(optimiser.rol_solver.rolvector.dat[0])
 # # dataset = pv.read('./solution.pvd')
 # # # Create a plotter object
 # # plotter = pv.Plotter()
@@ -622,10 +460,79 @@ optimiser.run()
 # # plotter.show(jupyter_backend="static")
 
 # + tags=["active-ipynb"]
-# # import matplotlib.pyplot as plt
-# # plt.plot(functional_values)
-# # plt.xlabel("Optimisation iteration")
-# # plt.ylabel("Reduced functional")
-# # plt.title("Optimisation convergence")
+# import matplotlib.pyplot as plt
+# plt.plot(functional_values)
+# plt.xlabel("Optimisation iteration")
+# plt.ylabel("Reduced functional")
+# plt.title("Optimisation convergence")
 # -
+
+# # POSTERIOR UNCERTAINTY ESTIMATION
+
+# +
+# Hutchinson’s stochastic trace estimator
+# Calculate uncertainty in the same space as the control by probing in certain unbiased directions
+# Hessian -> stiffness of the solution
+# Find Hessian inverse to discover the uncertainty
+
+# Action of the Hessian on the perturbation dm
+def apply_hessian(rf, dm):
+    return rf.hessian(dm)
+
+# Calculate the variance providing the rf, perturbations, total number of different probes (summed up), CG tolerance
+def estimate_posterior_variance(
+    rf, control_function, n_samples=30, tol=1e-8
+):
+    # Define the working space of the variance function
+    V = control_function.function_space()
+    variance = Function(V, name="Posterior_Variance")
+    variance.assign(0.0)
+
+    for _ in range(n_samples):
+        z = Function(V)
+        z.dat.data[:] = np.random.choice(
+            [-1.0, 1.0], size=z.dat.data.shape
+        )
+        tmp = Function(V)
+        x = Function(V)
+        r = Function(V).assign(z)
+        p = Function(V).assign(r)
+        rr_old = assemble(r * r * dx)
+
+        for _ in range(10):
+            Hp = apply_hessian(rf, p)
+            alpha = rr_old / Hp.dat.inner(p.dat) # alpha = |r|^2/(p^T*H*p)
+            x.assign(x + alpha * p)
+            Hp_fun = Function(V)
+            Hp_fun.assign(Hp.riesz_representation())
+            r.assign(r - alpha * Hp_fun)
+            rr_new = assemble(r * r * dx)
+            if rr_new < tol:
+                break
+            beta = rr_new / rr_old # beta is the cg parameter defining how much of the old perturbation should remain
+            p.assign(r + beta * p)
+            rr_old = rr_new
+
+        # variance.assign(variance + z * x)
+        tmp.interpolate(z * x) # z --> perturbation, x --> response
+        variance.assign(variance + tmp)
+
+
+    variance.assign(variance / n_samples)
+    return variance
+
+posterior_variance = estimate_posterior_variance(
+    reduced_functional, Tic, n_samples=30
+)
+
+posterior_std = Function(Q1, name="Posterior_StdDev")
+posterior_std.interpolate(sqrt(abs(posterior_variance)))
+
+# ============================================================
+# Output uncertainty
+# ============================================================
+uncertainty_vtk = VTKFile("posterior_uncertainty.pvd")
+uncertainty_vtk.write(posterior_std)
+# -
+
 

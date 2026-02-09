@@ -398,7 +398,7 @@ import datetime
 import time
 
 minimisation_problem = MinimizationProblem(reduced_functional, bounds=(T_lb, T_ub))
-minimisation_parameters["Status Test"]["Iteration Limit"] = 20
+minimisation_parameters["Status Test"]["Iteration Limit"] = 200
 minimisation_parameters["Step"]["Line Search"] = {
   "Descent Method": {"Type": "Steepest Descent"}
 }
