@@ -7,6 +7,7 @@ import pytest
 import numpy as np
 from typing import Literal
 from numbers import Number
+from unittest.mock import Mock, patch
 
 takes_boundary_id = ["min", "max", "integral", "l1norm", "l2norm"]
 takes_dim = ["min", "max"]
@@ -229,9 +230,163 @@ def test_function_extraction():
     mesh = get_mesh("annulus")
     F = fd.VectorFunctionSpace(mesh, "CG", 1)
     f = fd.Function(F)
-    diags = gadopt.BaseDiagnostics(quad_degree=4, f=f)
     vc = gadopt.utility.vertical_component(f)
-    assert diags._extract_functions(vc) == {f}
+    assert gadopt.diagnostics.extract_functions(vc) == {f}
+
+
+@pytest.mark.parametrize(
+    "mesh_type,bottom_id,top_id",
+    [
+        ("square", 3, 4),
+        ("annulus", "bottom", "top"),
+    ],
+)
+def test_u_vertical_matches_upward_component(mesh_type, bottom_id, top_id):
+    """
+    Test that GeodynamicalDiagnostics.u_vertical returns the velocity
+    component parallel to the upward normal.
+
+    On a Cartesian mesh this is the vertical component. On an annulus mesh
+    this is the radial component.
+    """
+    mesh = get_mesh(mesh_type, L=2)
+    V = fd.VectorFunctionSpace(mesh, "CG", 2)
+    W = fd.FunctionSpace(mesh, "CG", 1)
+    Z = V * W
+
+    z = fd.Function(Z)
+    u, _ = z.subfunctions
+
+    X, Y = fd.SpatialCoordinate(mesh)
+    u.interpolate(fd.as_vector([X + Y, 2.0 * Y - X]))
+
+    diags = gadopt.GeodynamicalDiagnostics(z, None, bottom_id, top_id)
+
+    u_vertical = diags.u_vertical()
+    expected = gadopt.utility.vertical_component(u)
+
+    error = fd.assemble((u_vertical - expected) ** 2 * fd.dx)
+
+    assert error < 1.0e-12
+
+
+@pytest.mark.parametrize(
+    "mesh_type,bottom_id,top_id",
+    [
+        ("square", 3, 4),
+        ("annulus", "bottom", "top"),
+    ],
+)
+def test_u_vertical_and_u_horizontal_decompose_velocity(mesh_type, bottom_id, top_id):
+    """
+    Test that the vertical and horizontal velocity components decompose
+    the full velocity magnitude.
+
+    On a Cartesian mesh the vertical component is the y/upward component.
+    On an annulus mesh it is the radial component.
+    """
+    mesh = get_mesh(mesh_type, L=2)
+    V = fd.VectorFunctionSpace(mesh, "CG", 2)
+    W = fd.FunctionSpace(mesh, "CG", 1)
+    Z = V * W
+
+    z = fd.Function(Z)
+    u, _ = z.subfunctions
+
+    X, Y = fd.SpatialCoordinate(mesh)
+    u.interpolate(fd.as_vector([X + Y, 2.0 * Y - X]))
+
+    diags = gadopt.GeodynamicalDiagnostics(z, None, bottom_id, top_id)
+
+    u_vertical = diags.u_vertical()
+    u_horizontal = diags.u_horizontal()
+
+    error = fd.assemble(
+        (
+            fd.inner(u, u)
+            - u_vertical**2
+            - fd.inner(u_horizontal, u_horizontal)
+        )
+        ** 2
+        * fd.dx
+    )
+
+    assert error < 1.0e-12
+
+
+def test_cache_outside_base_diagnostics():
+    @gadopt.diagnostics.ts_cache
+    def func():
+        return 1
+
+    with pytest.raises(TypeError):
+        func()
+
+
+def test_cache_missing_attr():
+    mesh = get_mesh("square")
+    F = fd.FunctionSpace(mesh, "CG", 1)
+    f = fd.Function(F)
+    diags = gadopt.BaseDiagnostics(quad_degree=4, f=f)
+    decorator_factory = gadopt.diagnostics.ts_cache(input_funcs="g")
+    decorator = decorator_factory(diags.integral)
+    with pytest.raises(AttributeError):
+        decorator(diags, f)
+
+
+def test_cache_not_a_function():
+    mesh = get_mesh("square")
+    F = fd.FunctionSpace(mesh, "CG", 1)
+    f = fd.Function(F)
+    diags = gadopt.BaseDiagnostics(quad_degree=4, f=f)
+    decorator_factory = gadopt.diagnostics.ts_cache(input_funcs="integral")
+    decorator = decorator_factory(gadopt.BaseDiagnostics.integral)
+    with pytest.raises(TypeError):
+        decorator(diags, f)
+
+
+def test_cache_is_used():
+    mesh = get_mesh("square")
+    F = fd.FunctionSpace(mesh, "CG", 1)
+    f = fd.Function(F)
+    diags = gadopt.BaseDiagnostics(quad_degree=4, f=f)
+    decorator_factory = gadopt.diagnostics.ts_cache()
+    mock = Mock(wraps=gadopt.BaseDiagnostics.integral)
+    decorator = decorator_factory(mock)
+    decorator(diags, f, None)
+    decorator(diags, f, None)
+    mock.assert_called_once()
+
+
+def test_no_functions_never_cached():
+    mesh = get_mesh("square")
+    F = fd.FunctionSpace(mesh, "CG", 1)
+    f = fd.Function(F)
+    with patch.object(
+        gadopt.BaseDiagnostics, "no_func_diag", return_value=1, create=True
+    ) as mock_method:
+        diags = gadopt.BaseDiagnostics(quad_degree=4, f=f)
+        decorator_factory = gadopt.diagnostics.ts_cache()
+        decorator = decorator_factory(gadopt.BaseDiagnostics.no_func_diag)
+        decorator(diags)
+        decorator(diags)
+        assert mock_method.call_count == 2
+
+
+def test_cache_invalidated():
+    mesh = get_mesh("square")
+    F = fd.FunctionSpace(mesh, "CG", 1)
+    f = fd.Function(F)
+    X, Y = fd.SpatialCoordinate(mesh)
+    f.interpolate(X + Y)
+    diags = gadopt.BaseDiagnostics(quad_degree=4, f=f)
+    decorator_factory = gadopt.diagnostics.ts_cache()
+    mock = Mock(wraps=gadopt.BaseDiagnostics.integral)
+    decorator = decorator_factory(mock)
+    decorator(diags, f, None)
+    f.assign(-f)
+    decorator(diags, f, None)
+    assert mock.call_count == 2
 
 
 @pytest.mark.parametrize(

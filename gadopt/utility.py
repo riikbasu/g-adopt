@@ -7,12 +7,13 @@ depending on what they would like to achieve.
 from firedrake import outer, ds_v, ds_t, ds_b, CellDiameter, CellVolume, dot, JacobianInverse
 from firedrake import sqrt, Function, FiniteElement, TensorProductElement, FunctionSpace, VectorFunctionSpace
 from firedrake import as_vector, SpatialCoordinate, Constant, max_value, min_value, dx, assemble, tanh
-from firedrake import op2, VectorElement, DirichletBC, utils, interpolate, conditional
+from firedrake import op2, VectorElement, DirichletBC, interpolate, conditional
 from firedrake.ufl_expr import extract_unique_domain
 import ufl
 import time
 from ufl.corealg.traversal import traverse_unique_terminals
 from firedrake.petsc import PETSc
+from functools import cached_property
 from mpi4py import MPI
 import numpy as np
 import logging
@@ -30,8 +31,14 @@ except ImportError:
 log_level = logging.getLevelName(os.environ.get("GADOPT_LOGLEVEL", "INFO").upper())
 
 
-def log(*args):
-    """Log output to stdout from root processor only"""
+def log(*args, level=None):
+    """Log output to stdout from root processor only.
+
+    If level is provided, the message is only printed when that level is
+    enabled by the GADOPT_LOGLEVEL environment variable.
+    """
+    if level is not None and level < log_level:
+        return
     PETSc.Sys.Print(*args)
 
 
@@ -121,6 +128,12 @@ def vertical_component(u):
     else:
         n = upward_normal(mesh)
         return sum([n_i * u_i for n_i, u_i in zip(n, u)])
+
+
+def horizontal_components(u):
+    """Returns expression for vector u with vertical component removed, i.e. returns the vector UFL expression orthogonal to gravity."""
+    mesh = extract_unique_domain(u)
+    return u - vertical_component(u) * upward_normal(mesh)
 
 
 def ensure_constant(f):
@@ -442,7 +455,7 @@ def timer_decorator(func):
 
 class InteriorBC(DirichletBC):
     """DirichletBC applied to anywhere that is *not* on the specified boundary"""
-    @utils.cached_property
+    @cached_property
     def nodes(self):
         return np.array(list(set(range(self._function_space.node_count)) - set(super().nodes)))
 

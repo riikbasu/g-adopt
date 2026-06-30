@@ -16,6 +16,7 @@ classifiers = [
   "Operating System :: OS Independent"
 ]
 dependencies = [
+  "doit",
   "pandas",
   "shapely",
   "vtk",
@@ -25,9 +26,11 @@ dependencies = [
 [project.optional-dependencies]
 demos = ["assess", "gadopt-demo-utils @ git+https://github.com/g-adopt/gadopt-demo-utils.git", "gmsh", "imageio", "jupytext", "openpyxl", "pyvista"]
 optimisation = ["pyroltrilinos"]
+gplates = ["gtrack", "pygplates"]
 
 [tool.setuptools]
 packages = ["gadopt", "gadopt.gplates", "gadopt.demos"]
 package-dir = { "gadopt.demos" = "demos" }
 
 [tool.setuptools_scm]
+scm.git.describe_command = ["git", "describe", "--dirty", "--tags", "--long", "--abbrev=40", "--match", "*[0-9]*", "--exclude", "Zenodo*"]

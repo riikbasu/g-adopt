@@ -6,6 +6,10 @@
 # al. 2011 testcases. There is also a case with a low
 # viscosity region situated under the ice sheet.
 # results within G-ADOPT see Scott et al. 2025.
+# N.b. this test uses the substitute formulation where
+# we substitte the internal variable update
+# (a Backward Euler solve) into the momentum equation so
+# that displacement is the only one unknown we solve for.
 
 # Weerdesteijn, M. F., Naliboff, J. B., Conrad,
 # C. P., Reusen, J. M., Steffen, R., Heister, T., &
@@ -225,7 +229,9 @@ else:
 
 if args.burgers:
     viscosity_1 = Function(DG0, name="viscosity 1")
-    initialise_background_field(viscosity_2, viscosity_values_2_tilde)
+    initialise_background_field(
+        viscosity_1, viscosity_values_1_tilde, X, radius_values_tilde,
+        shift=radius_values_tilde[-1])
     viscosity_2 = Function(DG0, name="viscosity 2")
     initialise_background_field(
         viscosity_2, viscosity_values_2_tilde, X, radius_values_tilde,
@@ -344,13 +350,13 @@ iterative_parameters = {"mat_type": "matfree",
                         "snes_monitor": None,
                         "snes_converged_reason": None,
                         "snes_type": "ksponly",
-                        "ksp_type": "gmres",
+                        "ksp_type": "cg",
                         "ksp_rtol": 1e-5,
                         "ksp_converged_reason": None,
                         "ksp_monitor": None,
                         "pc_type": "python",
                         "pc_fieldsplit_type": "firedrake.AssembledPC",
-                        "pc_python_type": "firedrake.AssembledPC",
+                        "pc_python_type": "gadopt.SPDAssembledPC",
                         "assembled_pc_type": "gamg",
                         "assembled_mg_levels_pc_type": "sor",
                         "assembled_pc_gamg_threshold": args.gamg_threshold,
