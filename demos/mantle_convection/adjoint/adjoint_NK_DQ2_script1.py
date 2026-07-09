@@ -181,15 +181,15 @@ Q1 = FunctionSpace(mesh, "CG", 1)
 # Note that this layer average will later be used for the smoothing term in our objective functional.
 with CheckpointFile(checkpoint_filename, mode="r") as checkpoint_file:
     Taverage = checkpoint_file.load_function(mesh, "Average_Temperature", idx=initial_timestep)
-# Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
+Tic = Function(Q1, name="Initial_Condition_Temperature").assign(Taverage)
 
-# Reassign Tic with the new state
-new_checkpoint_filename = 'LM_checkpoint.h5'
-new_checkpoint_file = CheckpointFile(new_checkpoint_filename, mode="r")
-new_temperature_timestepping_info = new_checkpoint_file.get_timestepping_history(mesh, "Initial Temperature")
-Tic = new_checkpoint_file.load_function(mesh, "Initial Temperature", idx=int(new_temperature_timestepping_info["index"][-1]))
-Tic.rename("Initial_Condition_Temperature")
-new_checkpoint_file.close()
+# # Reassign Tic with the new state
+# new_checkpoint_filename = 'LM_checkpoint.h5'
+# new_checkpoint_file = CheckpointFile(new_checkpoint_filename, mode="r")
+# new_temperature_timestepping_info = new_checkpoint_file.get_timestepping_history(mesh, "Initial Temperature")
+# Tic = new_checkpoint_file.load_function(mesh, "Initial Temperature", idx=int(new_temperature_timestepping_info["index"][-1]))
+# Tic.rename("Initial_Condition_Temperature")
+# new_checkpoint_file.close()
 
 # Given that Tic will be updated during the optimisation, we also create a function to store our initial guess,
 # which we will later use for smoothing. Note that since smoothing is executed in the control space, we must
